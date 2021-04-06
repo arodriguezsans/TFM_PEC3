@@ -69,6 +69,9 @@ if(!require(fable)){
 if(!require(fpp3)){
     install.packages("fpp3", repos='http://cran.us.r-project.org')
     library(fpp3)}
+if(!require(corrplot)){
+    install.packages('corrplot', repos='http://cran.us.r-project.org')
+    library(corrplot)}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -105,7 +108,7 @@ CNE_casos <- read.csv('CNE-casos_hosp_uci_def_sexo_edad_provres.csv',
                       stringsAsFactors = FALSE)
 ```
 
-# Inintial descriptive statistics and visualization
+# Initial descriptive statistics and visualization
 
 ## Data types and modifications
 
@@ -122,6 +125,8 @@ summary(EM3)
 table(EM3$Zonas.de.movilidad)
 ```
 
+### EM3 data transformation
+
 We are going to **transform**:
 
 * "Total" from "character" to "numerical" 
@@ -134,7 +139,7 @@ EM3$Periodo <- as.Date(EM3$Periodo,format="%d/%m/%Y")
 head(EM3)
 ```
 
-### Transpose EM3 & review missing values
+### EM3 transpose
 
 Due to the nature of this dataset we have to transpose it in order to analyse the missing values and impute them.
 
@@ -157,6 +162,8 @@ EM3_t<- EM3_t %>%
 
 EM3_t
 ```
+
+### EM3 review missing values & impute
 
 We check the missing values by province (we are close to 150 by province).
 
@@ -258,6 +265,8 @@ table(Google$sub_region_1)
 table(Google$sub_region_2)
 table(Google$iso_3166_2_code)
 ```
+
+### Google autonomous-communities & provinces
 
 We check data grouped by autonomous communities and provinces.
 
@@ -371,6 +380,8 @@ table(Google$sub_region_2)
 table(Google$iso_3166_2_code)
 ```
 
+### Google data transformation
+
 We are going to **transform / eliminate**:
 
 * A - Rows with "na" / "" in "sub_region_1" and "sub_region_2" columns are eliminated.
@@ -408,6 +419,8 @@ table(Google$iso_3166_2_code)
 #unique(Google$sub_region_2)
 #unique(EM3$Zonas.de.movilidad)
 ```
+
+### Google review missing values & impute
 
 We check missing values.
 
@@ -749,6 +762,8 @@ summary(CNE_tecnica)
 table(CNE_tecnica$provincia_iso)
 ```
 
+### CNE review missing values & impute
+
 We check missing values for CNE_tecnica. In this case we omit the NA values.
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
@@ -846,6 +861,8 @@ CNE_casos %>%
          title='Number of missing values') +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 ```
+
+### CNE data transformation
 
 We are going to **transform / eliminate**:
 
@@ -985,7 +1002,9 @@ head(Total,5)
 write.csv2(Total,"D:\\UOC Master Data Science\\_ M2.882 - TFM - Área 5\\UOC - Guia - PECS\\Pec3\\Total.csv", row.names = FALSE)
 ```
 
-## Dataframe plots 
+## Visual analysis
+
+### Dataframe plots 
 
 We have generated some plots from the **dataframe** object generated.
 
@@ -1030,7 +1049,7 @@ Total %>%
         x ="Date", y = "% Mobility")
 ```
 
-## Time-series plots
+### Time-series plots
 
 We have generated some plots from the **time-series** object generated.
 
@@ -1067,7 +1086,50 @@ Total_ts %>% filter(sub_region_2 == "Barcelona") %>%
   labs(y="Nº of Cases", title="Barcelona - Infections by Month")
 ```
 
-## STL - Seasonal and Trend decomposition using Loess
+### Correlation plots
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+Total.res<-Total %>% 
+  filter(sub_region_2 == "Barcelona")
+Total.res<-cor(Total.res[,c(-1,-2,-3)],method="spearman")
+corrplot.mixed(Total.res,upper="circle",number.cex=.65,tl.cex=.6)
+```
+
+### PCA
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+pca <- prcomp(Total.res, scale = T)
+summary(pca)
+pca$rotation
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+if(!require(FactoMineR)){
+    install.packages('FactoMineR', repos='http://cran.us.r-project.org')
+    library(FactoMineR)}
+if(!require(factoextra)){
+    install.packages('factoextra', repos='http://cran.us.r-project.org')
+    library(factoextra)}
+
+# Var contribution for PC1-PC5
+fviz_contrib(pca, choice = "var", axes = 1)
+fviz_contrib(pca, choice = "var", axes = 2)
+fviz_contrib(pca, choice = "var", axes = 3)
+fviz_contrib(pca, choice = "var", axes = 4)
+fviz_contrib(pca, choice = "var", axes = 5)
+```
+
+
+# Seasonal and trend decomposition
+
+## STL (Seasonal and Trend decomposition using Loess)
+
+As stated by [@hyndman]... "STL has several advantages over classical decomposition, and the SEATS and X-11 methods:
+
+* Unlike SEATS and X-11, STL will handle any type of seasonality, not only monthly and quarterly data.
+* The seasonal component is allowed to change over time, and the rate of change can be controlled by the user.
+* The smoothness of the trend-cycle can also be controlled by the user.
+* It can be robust to outliers (i.e., the user can specify a robust decomposition), so that occasional unusual observations will not affect the estimates of the trend-cycle and seasonal components. They will, however, affect the remainder component"...
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
 dcmp <- Total_ts %>% 
