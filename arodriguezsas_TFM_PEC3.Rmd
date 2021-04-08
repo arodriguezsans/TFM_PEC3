@@ -1,23 +1,23 @@
 ---
-title: 'PEC 3: Desing & Implementation - Data load, clean-up, transformation & model selection'
+title: 'PEC 3: Desing and Implementation'
 author: "UOC - Alumno: Álvaro Rodríguez Sans"
 date: "May 2020 - Delivery 23/05/2021"
 output:
-  html_document:
-    toc: yes
-    theme: cosmo
-    includes:
-      in_header: M2.882-TFM-PEC-header.html
-    number_sections: yes
-    toc_depth: 4
-  word_document:
-    toc: yes
   pdf_document: 
     fig_caption: yes
     keep_tex: yes
     latex_engine: xelatex
     number_sections: yes
     toc: yes
+    toc_depth: 4
+  word_document:
+    toc: yes
+  html_document:
+    toc: yes
+    theme: cosmo
+    includes:
+      in_header: M2.882-TFM-PEC-header.html
+    number_sections: yes
     toc_depth: 4
 toc-title: "Índex"
 bibliography: scholar.bib
@@ -42,9 +42,6 @@ if(!require(latexpdf)){
 if(!require(latex2exp)){
     install.packages('latex2exp', repos='http://cran.us.r-project.org')
     library(latex2exp)}
-if(!require(lubridate)){
-    install.packages('lubridate', repos='http://cran.us.r-project.org')
-    library(lubridate)}
 if(!require(psych)){
     install.packages("psych", repos='http://cran.us.r-project.org')
     library(psych)}
@@ -57,6 +54,9 @@ if(!require(tidyverse)){
 if(!require(imputeTS)){
     install.packages("imputeTS", repos='http://cran.us.r-project.org')
     library(imputeTS)}
+if(!require(VIM)){
+    install.packages('VIM', repos='http://cran.us.r-project.org')
+    library(VIM)}
 if(!require(stats)){
     install.packages("stats", repos='http://cran.us.r-project.org')
     library(stats)}
@@ -72,6 +72,18 @@ if(!require(fpp3)){
 if(!require(corrplot)){
     install.packages('corrplot', repos='http://cran.us.r-project.org')
     library(corrplot)}
+if(!require(corrplot)){
+    install.packages('corrplot', repos='http://cran.us.r-project.org')
+    library(corrplot)}
+if(!require(forecast)){
+    install.packages('forecast', repos='http://cran.us.r-project.org')
+    library(forecast)}
+if(!require(keras)){
+    install.packages('keras', repos='http://cran.us.r-project.org')
+    library(keras)}
+if(!require(tensorflow)){
+    install.packages('tensorflow', repos='http://cran.us.r-project.org')
+    library(tensorflow)}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -84,7 +96,7 @@ Data is loaded from the sources stated at PEC1 and PEC2 (CNE, INE and Google).
 - [Google-Covid-19](https://www.google.com/covid19/mobility/)
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
-library(dplyr)
+#library(dplyr)
 # Source INE 
 EM3 <- read.csv('EM3-Movimiento de personas por provincias.csv', 
                 header=TRUE, 
@@ -168,10 +180,6 @@ EM3_t
 We check the missing values by province (we are close to 150 by province).
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
-if(!require(VIM)){
-    install.packages('VIM', repos='http://cran.us.r-project.org')
-    library(VIM)}
-
 aggr(EM3_t[,-1], col=c('navyblue','yellow'),
      numbers=TRUE, sortVars=TRUE,
      labels=names(EM3_t[,-1]), cex.axis=.7,
@@ -716,6 +724,7 @@ Google_b <- merge(Google_retail, Google_grocery) %>%
               merge(Google_workplaces) %>%
               merge(Google_residential) 
 
+# We add the iso code for the province
 Google_b$iso_code <- NA
 Google_b$iso_code<-Google[match(Google_b$sub_region_2, Google$sub_region_2),3]
 rm("Google")
@@ -999,6 +1008,9 @@ Total %>%
 
 # CSV file generation
 head(Total,5)
+str(Total)
+summary(Total)
+table(Total$provincia_iso)
 write.csv2(Total,"D:\\UOC Master Data Science\\_ M2.882 - TFM - Área 5\\UOC - Guia - PECS\\Pec3\\Total.csv", row.names = FALSE)
 ```
 
@@ -1077,7 +1089,7 @@ autoplot(Total_ts_b, Total) +
   facet_wrap(~sub_region_2, scales = "free_y", ncol=2) + 
   theme(legend.position = "top") + 
   scale_x_date(date_minor_breaks = "1 day", name = "Time (Daily)") + 
-  ggtitle(label = "Mobility Change by Province (Málaga, Córdoba and Cádiz)")
+  ggtitle(label = "Mobility Change by Province (Barcelona, Madrid, Málaga, Córdoba and Cádiz)")
 
 # C sub_region_2 == "Barcelona" by month
 Total_ts %>% filter(sub_region_2 == "Barcelona") %>%
@@ -1089,10 +1101,27 @@ Total_ts %>% filter(sub_region_2 == "Barcelona") %>%
 ### Correlation plots
 
 ```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Filter to "sub_region_2" == "Barcelona"
+# Character / date columns are eliminated
+
+# pearson
+Total.res<-Total %>% 
+  filter(sub_region_2 == "Barcelona")
+Total.res<-cor(Total.res[,c(-1,-2,-3)],method="pearson")
+corrplot.mixed(Total.res,upper="circle",number.cex=.65,tl.cex=.6)
+
+# spearman
 Total.res<-Total %>% 
   filter(sub_region_2 == "Barcelona")
 Total.res<-cor(Total.res[,c(-1,-2,-3)],method="spearman")
 corrplot.mixed(Total.res,upper="circle",number.cex=.65,tl.cex=.6)
+
+# kendall
+Total.res<-Total %>% 
+  filter(sub_region_2 == "Barcelona")
+Total.res<-cor(Total.res[,c(-1,-2,-3)],method="kendall")
+corrplot.mixed(Total.res,upper="circle",number.cex=.65,tl.cex=.6)
+
 ```
 
 ### PCA
@@ -1119,8 +1148,53 @@ fviz_contrib(pca, choice = "var", axes = 4)
 fviz_contrib(pca, choice = "var", axes = 5)
 ```
 
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+par(mfrow=c(2,2))
+
+hist(Total$num_casos.x)
+hist(Total$num_casos.y)
+
+qqnorm(Total$num_casos.x, main="Nº Cases X")
+qqline(Total$num_casos.x,col=2)
+
+qqnorm(Total$num_casos.y, main="Nº Cases Y")
+qqline(Total$num_casos.y,col=2)
+
+#############################################
+norm_num_casos.x <- BoxCox(Total$num_casos.x, lambda = BoxCoxLambda(Total$num_casos.x))
+norm_num_casos.y <- BoxCox(Total$num_casos.y, lambda = BoxCoxLambda(Total$num_casos.y))
+
+hist(norm_num_casos.x)
+hist(norm_num_casos.y)
+
+qqnorm(norm_num_casos.x, main="Nº Cases X")
+qqline(norm_num_casos.x,col=2)
+
+qqnorm(norm_num_casos.y, main="Nº Cases Y")
+qqline(norm_num_casos.y,col=2)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Columns removal according PCA results and SME knowledge
+Total_ts <- Total_ts[c(-4,-5,-6,-8)]
+Total_ts_b <- Total_ts_b[c(-4,-5,-6,-8)]
+table(Total_ts$sub_region_2)
+str(Total_ts)
+summary(Total_ts)
+```
 
 # Seasonal and trend decomposition
+
+### ACF
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Filter time-series for Bar, Mad, Mal, Cor and, Cad
+Total_ts_b %>%
+  filter(sub_region_2 == "Barcelona") %>%
+  ACF(num_casos.x, lag_max = 48) %>%
+  autoplot() +
+  labs(title="ACF Nº Cases")
+```
 
 ## STL (Seasonal and Trend decomposition using Loess)
 
