@@ -1,0 +1,2202 @@
+---
+title: 'PEC 3: Desing and Implementation'
+author: "UOC - Alumno: Álvaro Rodríguez Sans"
+date: "May 2020 - Delivery 23/05/2021"
+output:
+  pdf_document: 
+    fig_caption: yes
+    keep_tex: yes
+    latex_engine: xelatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 4
+  html_document:
+    toc: yes
+    theme: cosmo
+    includes:
+      in_header: M2.882-TFM-PEC-header.html
+    number_sections: yes
+    toc_depth: 4
+  word_document:
+    toc: yes
+toc-title: "Índex"
+bibliography: scholar.bib
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+The bibliographic references used for this practice have been: [@baayen2008analyzing;@hothorn2014handbook;@hyndman;@livpujndanali;@teetor2011r;@vegasndpreprod].
+
+```{r}
+# At section - Data types and modifications
+if(!require(knitr)){
+    install.packages('knitr', repos='http://cran.us.r-project.org')
+    library(knitr)}
+if(!require(latexpdf)){
+    install.packages('latexpdf', repos='http://cran.us.r-project.org')
+    library(latexpdf)}
+if(!require(latex2exp)){
+    install.packages('latex2exp', repos='http://cran.us.r-project.org')
+    library(latex2exp)}
+if(!require(data.table)){
+    install.packages('data.table', repos='http://cran.us.r-project.org')
+    library(data.table)}
+if(!require(tidyverse)){
+    install.packages("tidyverse", repos='http://cran.us.r-project.org')
+    library(tidyverse)}
+if(!require(VIM)){
+    install.packages('VIM', repos='http://cran.us.r-project.org')
+    library(VIM)}
+if(!require(imputeTS)){
+    install.packages("imputeTS", repos='http://cran.us.r-project.org')
+    library(imputeTS)}
+if(!require(xts)){
+    install.packages("xts", repos='http://cran.us.r-project.org')
+    library(xts)}
+if(!require(tsbox)){
+    install.packages("tsbox", repos='http://cran.us.r-project.org')
+    library(tsbox)}
+# At section - Visual analysis
+if(!require(fpp3)){
+    install.packages("fpp3", repos='http://cran.us.r-project.org')
+    library(fpp3)}
+if(!require(corrplot)){
+    install.packages('corrplot', repos='http://cran.us.r-project.org')
+    library(corrplot)}
+if(!require(DescTools)){
+    install.packages("DescTools", repos='http://cran.us.r-project.org')
+    library(DescTools)}
+# At sections - ARIMA 
+#if(!require(forecast)){
+#    install.packages('forecast', repos='http://cran.us.r-project.org')
+#    library(forecast)}
+#if(!require(tseries)){
+#    install.packages('tseries', repos='http://cran.us.r-project.org')
+#    library(tseries)}
+#if(!require(astsa)){
+#    install.packages('astsa', repos='http://cran.us.r-project.org')
+#    library(astsa)}
+
+#if(!require(psych)){
+#    install.packages("psych", repos='http://cran.us.r-project.org')
+#    library(psych)}
+#if(!require(stats)){
+#    install.packages("stats", repos='http://cran.us.r-project.org')
+#    library(stats)}
+#if(!require(keras)){
+#    install.packages('keras', repos='http://cran.us.r-project.org')
+#    library(keras)}
+#if(!require(tensorflow)){
+#    install.packages('tensorflow', repos='http://cran.us.r-project.org')
+#    library(tensorflow)}
+
+#if(!require(DataExplorer)){
+#    install.packages('DataExplorer', repos='http://cran.us.r-project.org')
+#    library(DataExplorer)}
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Data load
+
+Data is loaded from the sources stated at PEC1 and PEC2 (CNE, INE and Google).
+
+- [CNE-Covid-19](https://cnecovid.isciii.es/covid19/#documentacion-y-datos)
+- [INE-Covid-19](https://www.ine.es/jaxiT3/Datos.htm?t=37811#!tabs-grafico)
+- [Google-Covid-19](https://www.google.com/covid19/mobility/)
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#library(dplyr)
+# Source INE 
+EM3 <- read.csv('EM3-Movimiento de personas por provincias.csv', 
+                header=TRUE, 
+                sep = ";", 
+                stringsAsFactors = FALSE)
+
+# Source Google
+Google <- read.csv('Google-2020_ES_Region_Mobility_Report.csv', 
+                   header=TRUE, 
+                   sep = ";", 
+                   stringsAsFactors = FALSE)
+
+# Source CNE
+CNE_tecnica <- read.csv('CNE-casos_tecnica_provincia.csv', 
+                        header=TRUE, 
+                        sep = ",", 
+                        stringsAsFactors = FALSE)
+CNE_casos <- read.csv('CNE-casos_hosp_uci_def_sexo_edad_provres.csv', 
+                      header=TRUE,
+                      sep = ",",
+                      stringsAsFactors = FALSE)
+```
+
+# Initial descriptive statistics and visualization (na and impute)
+
+## Data types and modifications
+
+We are gonig to check the **type of variable** that corresponds to each of the variables (numerical, factor, etc.) and **missing data / values or other anomalies** in each dataset.
+
+### EM3 review
+
+We have the movement of people by provinces (we can see 146 rows by province, that correspond to days). In order to facilitate the comparison and have a valid reference on to what extent the mobility of the population should be considered to have varied, the data of a day of a week that can be considered "normal" are taken as a reference. For this study, the "normal" day that has been considered is the one that results from the average of the days 18 (Monday) to 21 (Thursday) of November 2019. It is indicated in the tables as the reference date 18/11/2019.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Source INE 
+summary(EM3)
+head(str(EM3,vec.len=2))
+table(EM3$Zonas.de.movilidad)
+```
+
+### EM3 data transformation
+
+We are going to **transform**:
+
+* "Total" from "character" to "numerical" 
+* "Periodo" from "character" to "date"
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+EM3$Total <- sub(",", ".", EM3$Total)
+EM3$Total <- as.numeric(EM3$Total)
+EM3$Periodo <- as.Date(EM3$Periodo,format="%d/%m/%Y")
+head(EM3)
+```
+
+### EM3 transpose and dates missing generation
+
+Due to the nature of this dataset we have to transpose it in order to analyse the missing values by province and impute them. There are some dates that are not provided by EM3 study.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#library(data.table)
+# Transpose dataframe 
+EM3_t<-dcast(EM3, Periodo~Zonas.de.movilidad)#, fill=NA)
+
+#library(tidyverse)
+# Create dates missing (for time series).
+# Note: Acccording INE some "dates" are not provided.
+EM3_t<-EM3_t %>%
+  complete(Periodo = seq.Date(min(Periodo), max(Periodo), by="day"))
+
+# Filter the interest period according INE EM3 study
+# "2019-11-18" is the reference date EM3 study (for us it is excluded)
+EM3_t<- EM3_t %>% 
+  filter(Periodo <= "2019-11-18" | Periodo >= "2020-03-16")
+
+EM3_t
+```
+
+### EM3 review missing values & impute
+
+We check the missing values by province (we are close to 150 by province).
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#library(VIM)
+aggr(EM3_t[,-1], col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(EM3_t[,-1]), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+EM3_t %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+We impute the missing values following the principales stated for [imputeTS](https://cran.r-project.org/web/packages/imputeTS/vignettes/imputeTS-Time-Series-Missing-Value-Imputation-in-R.pdf). Thanks to this approach we almost double the amount of data for analysis by province (It was selected "na_seadec" due to it covers seasonality aspects -weekdays/weekends in our case-).
+
+It is needed to transform the dataframe to a time series object.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Used to convert dataframe to ts object
+#library(xts) 
+EM3_t_ts<-xts(EM3_t[-1],EM3_t$Periodo)
+
+# Impute the missing values with na_kalman, na_seadec, na_interpolation & na_seasplit 
+#library(imputeTS) 
+imp <- na_kalman(EM3_t_ts[,1])
+ggplot_na_imputations(EM3_t_ts[,1], imp)
+
+imp2 <- na_seadec(EM3_t_ts[,1])
+ggplot_na_imputations(EM3_t_ts[,1], imp2)
+
+imp3 <- na_seasplit(EM3_t_ts[,1])
+ggplot_na_imputations(EM3_t_ts[,1], imp3)
+
+imp4 <- na_interpolation(EM3_t_ts[,1])
+ggplot_na_imputations(EM3_t_ts[,1], imp4)
+
+# We select na_seadec for the dataset
+EM3_t_ts <- na_seadec(EM3_t_ts)
+plot(EM3_t_ts[,1])
+
+# We convert the time series object to a dataframe
+#library(tsbox)
+EM3 <- ts_df(EM3_t_ts)
+
+names(EM3)[names(EM3) == "id"] <- "Zonas.de.movilidad"
+names(EM3)[names(EM3) == "time"] <- "Periodo"
+names(EM3)[names(EM3) == "value"] <- "Total"
+
+# Transpose dataframe 
+EM3_t<-dcast(EM3, Periodo~Zonas.de.movilidad, fill=NA)
+
+# We check again missing values (result should be zero)
+aggr(EM3_t[,-1], col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(EM3_t[,-1]), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+EM3_t %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+head(str(EM3_t,vec.len=2))
+summary(EM3_t)
+#library(DataExplorer)
+#plot_histogram(EM3_t)
+table(EM3$Zonas.de.movilidad)
+```
+
+### Google review
+
+Here we have data mobility from autonomus-communities and provinces.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#Source Google
+summary(Google)
+head(str(Google,vec.len=1))
+table(Google$sub_region_1)
+table(Google$sub_region_2)
+table(Google$iso_3166_2_code)
+```
+
+### Google autonomous-communities & provinces
+
+We check data grouped by autonomous communities and provinces.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+Google %>% group_by(sub_region_1) %>% tally()
+Google %>% group_by(sub_region_1) %>% count(sub_region_2)
+```
+
+In Spain there are **autonomous communities (AC)** and **autonomous cities (C)** that are considered as **provinces (Pr)**. This is the case for:
+
+* AC - Asturias, Principality - Pr - Asturias
+* AC - Balears, Illes - Pr - Balears, Illes
+* AC - Cantabria - Pr - Cantabria
+* AC - Madrid, Community - Pr - Madrid
+* AC - Murcia, Region - Pr- Murcia
+* AC - Navarra, Foral Community - Pr - Navarra
+* AC - Rioja, La - Pr - Rioja, La
+* C - Ceuta - C/Pr - Ceuta
+* C - Melilla - C/Pr - Melilla 
+
+In this data set, the empty values in the "sub_region_2" column, for the autonomous communities mentinoed, will be replaced by the value contained in the "sub_region_1" column (A). Also we are going to modify the names of the provinces that have special characters in order to adopt the INE standards (B). See note.
+
+**Note** The following links states the provinces in Spain [INE CCAA](https://www.ine.es/daco/daco42/codmun/cod_ccaa_provincia.htm) and its [ISO codes](https://es.wikipedia.org/wiki/ISO_3166-2:ES) are going to be used as tables of referencence.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Modification provinces - A
+Google$sub_region_2[Google$sub_region_1=="Balearic Islands"] <- "Balears, Illes"
+Google$iso_3166_2_code[Google$sub_region_2=="Balears, Illes"] <- "PM"
+
+Google$sub_region_2[Google$sub_region_1=="Asturias"] <- "Asturias"
+Google$iso_3166_2_code[Google$sub_region_2=="Asturias"] <- "O"
+
+Google$sub_region_2[Google$sub_region_1=="Cantabria"] <- "Cantabria"
+Google$iso_3166_2_code[Google$sub_region_2=="Cantabria"] <- "S"
+
+Google$sub_region_2[Google$sub_region_1=="Community of Madrid"] <- "Madrid"
+Google$iso_3166_2_code[Google$sub_region_2=="Madrid"] <- "M"
+
+Google$sub_region_2[Google$sub_region_1=="Region of Murcia"] <- "Murcia"
+Google$iso_3166_2_code[Google$sub_region_2=="Murcia"] <- "MU"
+
+Google$sub_region_2[Google$sub_region_1=="Navarre"] <- "Navarra"
+Google$iso_3166_2_code[Google$sub_region_2=="Navarra"] <- "NA"
+
+Google$sub_region_2[Google$sub_region_1=="La Rioja"] <- "Rioja, La"
+Google$iso_3166_2_code[Google$sub_region_2=="Rioja, La"] <- "LO"
+
+Google$sub_region_2[Google$sub_region_1=="Ceuta"] <- "Ceuta"
+Google$iso_3166_2_code[Google$sub_region_2=="Ceuta"] <- "CE"
+
+Google$sub_region_2[Google$sub_region_1=="Melilla"] <- "Melilla"
+Google$iso_3166_2_code[Google$sub_region_2=="Melilla"] <- "ML"
+
+# Modification provinces - B
+Google$sub_region_2[Google$sub_region_2=="A CoruÃ±a"]<-"Coruña, A"
+Google$sub_region_2[Google$sub_region_2=="Ã\u0081lava"]<-"Araba/Álava"
+Google$sub_region_2[Google$sub_region_2=="Ã\u0081vila"]<-"Ávila"
+Google$sub_region_2[Google$sub_region_2=="Alicante"]<-"Alicante/Alacant"
+Google$sub_region_2[Google$sub_region_2=="Biscay"]<-"Bizkaia"
+Google$sub_region_2[Google$sub_region_2=="CÃ¡ceres"]<-"Cáceres"
+Google$sub_region_2[Google$sub_region_2=="CÃ¡diz"]<-"Cádiz"
+Google$sub_region_2[Google$sub_region_2=="CÃ³rdoba"]<-"Córdoba"
+Google$sub_region_2[Google$sub_region_2=="CastellÃ³n"]<-"Castellón/Castelló"
+Google$sub_region_2[Google$sub_region_2=="JaÃ©n"]<-"Jaén"
+Google$sub_region_2[Google$sub_region_2=="Las Palmas"]<-"Palmas, Las"
+Google$sub_region_2[Google$sub_region_2=="LeÃ³n"]<-"León"
+Google$sub_region_2[Google$sub_region_2=="MÃ¡laga"]<-"Málaga"
+Google$sub_region_2[Google$sub_region_2=="Province of Ourense"]<-"Ourense"
+Google$sub_region_2[Google$sub_region_2=="Seville"]<-"Sevilla"
+Google$sub_region_2[Google$sub_region_2=="Valencia"]<-"Valencia/València"
+Google$sub_region_2 <- with(Google, ifelse(grepl("^Almer", sub_region_2), 
+                                                  "Almería", sub_region_2))
+# Table check
+table(Google$sub_region_2)
+table(Google$iso_3166_2_code)
+```
+
+### Google data transformation
+
+We are going to **transform / eliminate**:
+
+* A - Rows with "na" / "" in "sub_region_1" and "sub_region_2" columns are eliminated.
+* B - Date column is transformed from "character" to "date".
+* C - Some columns are eliminated due to they are not adding value or they contain blanks (country_region_code, country_region, metro_area, census_fips_code, pace_id).
+* D - "ES-" is elimianted from "iso_3166_2_code" column.
+* E - We changed from integer to numeric, integer columns.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Transform / eliminate A
+Google <- filter(Google, sub_region_1 != "", sub_region_2 != "" )
+
+# Transform / eliminate B
+Google$date <- as.Date(Google$date ,format="%d/%m/%Y")
+
+# Transform / eliminate C
+Google<-within(Google, rm(country_region_code,
+                  country_region,
+                  metro_area,
+                  census_fips_code,
+                  place_id))
+
+# Transform / eliminate D
+Google$iso_3166_2_code <- gsub("ES-", "", Google$iso_3166_2_code)
+
+# We pass from integer to numeric
+Google$retail_and_recreation_percent_change_from_baseline <- 
+  as.numeric(Google$retail_and_recreation_percent_change_from_baseline)
+Google$grocery_and_pharmacy_percent_change_from_baseline <-as.numeric(Google$grocery_and_pharmacy_percent_change_from_baseline)
+Google$parks_percent_change_from_baseline <-as.numeric(Google$parks_percent_change_from_baseline)
+Google$transit_stations_percent_change_from_baseline <-as.numeric(Google$transit_stations_percent_change_from_baseline)
+Google$workplaces_percent_change_from_baseline <-as.numeric(Google$workplaces_percent_change_from_baseline)
+Google$residential_percent_change_from_baseline <-as.numeric(Google$residential_percent_change_from_baseline)
+
+# Check table
+head(Google,5)
+table(Google$sub_region_2)
+table(Google$iso_3166_2_code)
+#unique(Google$sub_region_2)
+#unique(EM3$Zonas.de.movilidad)
+```
+
+### Google review missing values & impute
+
+We check missing values.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+aggr(Google, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(Google), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+Google %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+We generate 6 new dataframes from the 6 features stated in order to imput missing values by province using the approach stated at "imputeTS" library (and also used at EM3). 
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Transpose dataframe 
+Google_retail<-Google[c(2,4,5)]
+Google_t_retail<-dcast(Google_retail, date~sub_region_2, fill=NA)
+
+# Visualize missing values
+aggr(Google_t_retail, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(Google_t_retail), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+Google_t_retail %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Convert dataframe to ts object
+Google_t_retail_ts<-xts(Google_t_retail[-1],Google_t_retail$date)
+ 
+# Impute the missing values with na_seadec (i.e Ceuta)
+imp5 <- na_seadec(Google_t_retail_ts[,16])
+ggplot_na_imputations(Google_t_retail_ts[,16], imp5)
+
+# We select na_seadec for the dataset
+Google_t_retail_ts <- na_seadec(Google_t_retail_ts)
+plot(Google_t_retail_ts[,16])
+
+# We convert the time series object to a dataframe
+Google_retail <- ts_df(Google_t_retail_ts)
+
+names(Google_retail)[names(Google_retail) == "id"] <- "sub_region_2"
+names(Google_retail)[names(Google_retail) == "time"] <- "Date"
+names(Google_retail)[names(Google_retail) == "value"] <-
+  "retail_and_recreation_percent_change_from_baseline"
+
+###################################################################
+# Transpose dataframe 
+Google_grocery<-Google[c(2,4,6)]
+Google_t_grocery<-dcast(Google_grocery, date~sub_region_2, fill=NA)
+
+# Visualize missing values
+aggr(Google_t_grocery, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(Google_t_grocery), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+Google_t_grocery %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Convert dataframe to ts object
+Google_t_grocery_ts<-xts(Google_t_grocery[-1],Google_t_grocery$date)
+ 
+# Impute the missing values with na_seadec (i.e Ceuta)
+imp6 <- na_seadec(Google_t_grocery_ts[,16])
+ggplot_na_imputations(Google_t_grocery_ts[,16], imp6)
+
+# We select na_seadec for the dataset
+Google_t_grocery_ts <- na_seadec(Google_t_grocery_ts)
+plot(Google_t_grocery_ts[,16])
+
+# We convert the time series object to a dataframe
+Google_grocery <- ts_df(Google_t_grocery_ts)
+
+names(Google_grocery)[names(Google_grocery) == "id"] <- "sub_region_2"
+names(Google_grocery)[names(Google_grocery) == "time"] <- "Date"
+names(Google_grocery)[names(Google_grocery) == "value"] <-
+  "grocery_and_pharmacy_percent_change_from_baseline"
+
+###################################################################
+# Transpose dataframe 
+Google_parks<-Google[c(2,4,7)]
+Google_t_parks<-dcast(Google_parks, date~sub_region_2, fill=NA)
+
+# Visualize missing values
+aggr(Google_t_parks, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(Google_t_parks), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+Google_t_parks %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Convert dataframe to ts object
+Google_t_parks_ts<-xts(Google_t_parks[-1],Google_t_parks$date)
+ 
+# Impute the missing values with na_seadec (i.e Ceuta)
+imp7 <- na_seadec(Google_t_parks_ts[,16])
+ggplot_na_imputations(Google_t_parks_ts[,16], imp7)
+
+# We select na_seadec for the dataset
+Google_t_parks_ts <- na_seadec(Google_t_parks_ts)
+plot(Google_t_parks_ts[,16])
+
+# We convert the time series object to a dataframe
+Google_parks <- ts_df(Google_t_parks_ts)
+
+names(Google_parks)[names(Google_parks) == "id"] <- "sub_region_2"
+names(Google_parks)[names(Google_parks) == "time"] <- "Date"
+names(Google_parks)[names(Google_parks) == "value"] <- 
+  "parks_percent_change_from_baseline"
+
+###################################################################
+# Transpose dataframe 
+Google_transit<-Google[c(2,4,8)]
+Google_t_transit<-dcast(Google_transit, date~sub_region_2, fill=NA)
+
+# Visualize missing values
+aggr(Google_t_transit, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(Google_t_transit), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+Google_t_transit %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Convert dataframe to ts object
+Google_t_transit_ts<-xts(Google_t_transit[-1],Google_t_transit$date)
+ 
+# Impute the missing values with na_seadec (i.e Ceuta)
+imp8 <- na_seadec(Google_t_transit_ts[,16])
+ggplot_na_imputations(Google_t_transit_ts[,16], imp8)
+
+# We select na_seadec for the dataset
+Google_t_transit_ts <- na_seadec(Google_t_transit_ts)
+plot(Google_t_transit_ts[,16])
+
+# We convert the time series object to a dataframe
+Google_transit <- ts_df(Google_t_transit_ts)
+
+names(Google_transit)[names(Google_transit) == "id"] <- "sub_region_2"
+names(Google_transit)[names(Google_transit) == "time"] <- "Date"
+names(Google_transit)[names(Google_transit) == "value"] <-
+  "transit_stations_percent_change_from_baseline"
+
+###################################################################
+# Transpose dataframe 
+Google_workplaces<-Google[c(2,4,9)]
+Google_t_workplaces<-dcast(Google_workplaces, date~sub_region_2, fill=NA)
+
+# Visualize missing values
+aggr(Google_t_workplaces, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(Google_t_workplaces), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+Google_t_workplaces %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Convert dataframe to ts object
+Google_t_workplaces_ts<-xts(Google_t_workplaces[-1],Google_t_workplaces$date)
+ 
+# Impute the missing values with na_seadec (i.e Ceuta)
+imp9 <- na_seadec(Google_t_workplaces_ts[,16])
+ggplot_na_imputations(Google_t_workplaces_ts[,16], imp9)
+
+# We select na_seadec for the dataset
+Google_t_workplaces_ts <- na_seadec(Google_t_workplaces_ts)
+plot(Google_t_workplaces_ts[,16])
+
+# We convert the time series object to a dataframe
+Google_workplaces <- ts_df(Google_t_workplaces_ts)
+
+names(Google_workplaces)[names(Google_workplaces) == "id"] <- "sub_region_2"
+names(Google_workplaces)[names(Google_workplaces) == "time"] <- "Date"
+names(Google_workplaces)[names(Google_workplaces) == "value"] <-
+  "workplaces_percent_change_from_baseline"
+
+###################################################################
+# Transpose dataframe 
+Google_residential<-Google[c(2,4,10)]
+Google_t_residential<-dcast(Google_residential, date~sub_region_2, fill=NA)
+
+# Visualize missing values
+aggr(Google_t_residential, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(Google_t_residential), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+Google_t_residential %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Convert dataframe to ts object
+Google_t_residential_ts<-xts(Google_t_residential[-1],Google_t_residential$date)
+ 
+# Impute the missing values with na_seadec (i.e Ceuta)
+imp10 <- na_seadec(Google_t_residential_ts[,16])
+ggplot_na_imputations(Google_t_residential_ts[,16], imp10)
+
+# We select na_seadec for the dataset
+Google_t_residential_ts <- na_seadec(Google_t_residential_ts)
+plot(Google_t_residential_ts[,16])
+
+# We convert the time series object to a dataframe
+Google_residential <- ts_df(Google_t_residential_ts)
+
+names(Google_residential)[names(Google_residential) == "id"] <- "sub_region_2"
+names(Google_residential)[names(Google_residential) == "time"] <- "Date"
+names(Google_residential)[names(Google_residential) == "value"] <-
+  "residential_percent_change_from_baseline"
+```
+
+Now we merge the previous dataframes into new one with the imputed vaules and we add the ISO code for the province.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# New dataframe Google_b 
+# This approach assumes that the column names are the same and that there's the same number of rows (our case) in each data frame you are merging. 
+# Any duplicated columns are automatically eliminated used in the merging process.
+Google_b <- merge(Google_retail, Google_grocery) %>%
+              merge(Google_parks) %>%
+              merge(Google_transit) %>%
+              merge(Google_workplaces) %>%
+              merge(Google_residential) 
+
+# We add the iso code for the province
+Google_b$iso_code <- NA
+Google_b$iso_code<-Google[match(Google_b$sub_region_2, Google$sub_region_2),3]
+rm("Google")
+Google<-Google_b
+rm("Google_b")
+
+# Check table
+head(Google,5)
+table(Google$sub_region_2)
+table(Google$iso_code)
+```
+
+We check missing values. We should obtain zero missing values.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+aggr(Google, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(Google), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+Google %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### CNE review
+
+The CSV files are provided per "imputed date" (fecha)":
+
+* **cases_technic_province.csv** - Number of cases by diagnostic technique and province (of residence)
+* **cases_hosp_uci_def_sexo_edad_provres.csv** - Number of hospitalizations, number of ICU admissions and number of deaths by sex, age and province of residence.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+summary(CNE_tecnica)
+head(str(CNE_tecnica, vec.len=3))
+table(CNE_tecnica$provincia_iso)
+```
+
+### CNE review missing values & impute
+
+We check missing values for CNE_tecnica. In this case we omit the NA values.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+aggr(CNE_tecnica, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(CNE_tecnica), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+CNE_tecnica %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+####################################
+CNE_tecnica <- na.omit(CNE_tecnica)
+####################################
+
+aggr(CNE_tecnica, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(CNE_tecnica), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+CNE_tecnica %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+summary(CNE_casos)
+head(str(CNE_casos,vec.len=3))
+table(CNE_casos$provincia_iso)
+```
+
+We check missing values for CNE_casos. In this case also we omit the NA values.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+aggr(CNE_casos, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(CNE_casos), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+CNE_casos %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+###############################
+CNE_casos <- na.omit(CNE_casos)
+###############################
+
+aggr(CNE_casos, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(CNE_casos), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+CNE_casos %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+### CNE data transformation
+
+We are going to **transform / eliminate**:
+
+* A - "Fecha" column is transformed (in both datasets) from "character" to "date".
+* B - "Grupo_edad" and "Sexo" columns are eliminated from dataset "CNE_casos" due to they are not adding value (mobility does not include this variable).
+* C - We change NC iso code to NA (Navarra) in both dataframes.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Transform / eliminate A
+CNE_tecnica$fecha <- as.Date(CNE_tecnica$fecha ,format="%Y-%m-%d")
+CNE_casos$fecha <- as.Date(CNE_casos$fecha ,format="%Y-%m-%d")
+
+# Transform / eliminate B
+CNE_casos<-within(CNE_casos, rm(grupo_edad, sexo))
+
+# Iso code update for Navarra C
+CNE_tecnica$provincia_iso[CNE_tecnica$provincia_iso=="NC"] <- "NA"
+CNE_casos$provincia_iso[CNE_casos$provincia_iso=="NC"] <- "NA"
+
+# Check table
+head(CNE_tecnica,5)
+head(CNE_casos,5)
+```
+
+We check both dataframes offers the same total results.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+CNE_tecnica %>% 
+  group_by(provincia_iso) %>% 
+  summarise_at(vars(num_casos), sum)
+
+CNE_casos %>% 
+  group_by(provincia_iso) %>% 
+  summarise_at(vars(num_casos), sum)
+```
+
+## Datasets combinations
+
+We proceed to **combine** the different data sets into one.
+
+### CNE_tec_cas
+
+* CNE_casos_g, a groupped dataframe due to the columns eliminated in previous step (grupo_edad, sexo)
+* CNE_tec_cas -> CNE_tecnica + CNE_casos_g
+
+Here we merge by columns "provincia_iso","fecha".
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# CNE_casos_g 
+CNE_casos_g = CNE_casos %>% 
+  group_by(provincia_iso, fecha) %>% 
+  summarise_at(vars(num_casos, num_hosp, num_uci, num_def), sum)
+head(CNE_casos_g,5)
+
+# New dataframe CNE_tec_cas 
+CNE_tec_cas<-merge(CNE_tecnica, 
+                   CNE_casos_g, by.x=c("provincia_iso","fecha"), 
+                   by.y=c("provincia_iso","fecha")) 
+
+# We check both dataframes offers the same total results
+CNE_tecnica %>% 
+  group_by(provincia_iso) %>% 
+  summarise_at(vars(num_casos), sum)
+CNE_casos_g %>% 
+  group_by(provincia_iso) %>% 
+  summarise_at(vars(num_casos), sum)
+
+head(CNE_tec_cas,5)
+table(CNE_tec_cas$provincia_iso)
+```
+
+### GOG_CNE
+
+* GOG_CNE -> CNE_tec_cas + Google
+
+Here we merge by columns "provincia_iso" / "fecha" and "iso_3166_2_code" / "date".
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# New dataframe GOG_CNE 
+GOG_CNE<-merge(CNE_tec_cas, 
+               Google, 
+               by.x=c("provincia_iso","fecha"), 
+               by.y=c("iso_code","Date"))
+head(GOG_CNE,5)
+table(GOG_CNE$provincia_iso)
+```
+
+### Total
+
+* Total -> GOG_CNE + EM3
+
+Here we merge by columns "sub_region_2" / "fecha" and "Zonas.de.movilidad" / "Periodo".
+With this dataset we have 21 features for study.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# New dataframe Total 
+Total<-merge(GOG_CNE, 
+             EM3, 
+             by.x=c("sub_region_2","fecha"), 
+             by.y=c("Zonas.de.movilidad","Periodo")) 
+
+head(Total,5)
+head(str(Total,vec.len=1))
+summary(Total)
+
+Total$num_casos.x <- as.numeric(Total$num_casos.x)
+Total$num_casos_prueba_pcr <- as.numeric(Total$num_casos_prueba_pcr)
+Total$num_casos_prueba_test_ac <- as.numeric(Total$num_casos_prueba_test_ac)
+Total$num_casos_prueba_ag <- as.numeric(Total$num_casos_prueba_ag)
+Total$num_casos_prueba_elisa <- as.numeric(Total$num_casos_prueba_elisa)
+Total$num_casos_prueba_desconocida   <- as.numeric(Total$num_casos_prueba_desconocida)
+Total$num_casos.y <- as.numeric(Total$num_casos.y)
+Total$num_hosp <- as.numeric(Total$num_hosp)
+Total$num_uci <- as.numeric(Total$num_uci)
+Total$num_def <- as.numeric(Total$num_def)
+
+table(Total$sub_region_2)
+table(Total$provincia_iso)
+```
+
+We check the missing values. We should have zero missing values
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+aggr(Total, col=c('navyblue','yellow'),
+     numbers=TRUE, sortVars=TRUE,
+     labels=names(Total), cex.axis=.7,
+     gap=3, ylab=c("Missing data","Pattern"))
+
+Total %>%
+    gather(key = "key", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(key, is.missing) %>%
+    summarise(num.missing = n()) %>%
+    filter(is.missing==T) %>%
+    select(-is.missing) %>%
+    arrange(desc(num.missing)) %>%
+    ggplot() +
+    geom_bar(aes(x=key, y=num.missing), stat = 'identity',fill="#F0E442") +
+    labs(x='variable', y="number of missing values", 
+         title='Number of missing values') +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Review results 
+# Discrepancies due to different time-frames when merge CNE dataframes (see previous checks)
+Total %>% 
+  group_by(provincia_iso) %>% 
+  summarise_at(vars(num_casos.x,num_casos.y), sum)
+
+# CSV file generation
+head(Total,5)
+head(str(Total,vec.len=1))
+summary(Total)
+table(Total$provincia_iso)
+write.csv2(Total,"D:\\UOC Master Data Science\\_ M2.882 - TFM - Área 5\\UOC - Guia - PECS\\Pec3\\Total.csv",
+           row.names = FALSE)
+```
+
+## Visual analysis
+
+### Dataframe plots (Málaga, Sevilla and Cádiz)
+
+We have generated some plots from the **dataframe** object generated.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Line plots
+# All num_casos.x
+ggplot(Total, aes(x=fecha, y=num_casos.x, group=sub_region_2)) +
+  geom_line(aes(linetype=sub_region_2, color=sub_region_2))+
+  geom_point(aes(color=sub_region_2))+
+  theme(legend.position="top") +
+  labs(title="Cases by Province",
+        x ="Date", y = "Nº of cases")
+
+# All Total (mobility)
+ggplot(Total, aes(x=fecha, y=Total, group=sub_region_2)) +
+  geom_line(aes(linetype=sub_region_2, color=sub_region_2))+
+  geom_point(aes(color=sub_region_2))+
+  theme(legend.position="top") +
+  labs(title="Mobility Change by Province",
+        x ="Date", y = "% Mobility")
+
+# Mal, Sev and Cad - num_casos.x
+Total %>%
+  filter(sub_region_2 == "Málaga" | sub_region_2 == "Cádiz" |
+         sub_region_2 == "Sevilla") %>%
+  ggplot(aes(x=fecha, y=num_casos.x))+
+    geom_line(aes(color=sub_region_2))+
+    geom_point(aes(color=sub_region_2))+
+    theme(legend.position="top") +
+    labs(title="Cases by Province (Málaga, Córdoba and Cádiz)",
+        x ="Date", y = "Nº of cases")
+
+# Mal, Sev and Cad - Total (mobility)
+Total %>%
+  filter(sub_region_2 == "Málaga" | sub_region_2 == "Cádiz" |
+         sub_region_2 == "Sevilla") %>%
+  ggplot(aes(x=fecha, y=Total))+
+    geom_line(aes(color=sub_region_2))+
+    geom_point(aes(color=sub_region_2))+
+    theme(legend.position="top") +
+  labs(title="Mobility Change by Province (Málaga, Sevilla and Cádiz)",
+        x ="Date", y = "% Mobility")
+```
+
+### Time-series plots (Barcelona, Madrid, Málaga, Sevilla and Cádiz)
+
+We have generated some plots from the **time-series** object generated. We use tsibble().
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Convert dataframe to ts object
+#library(fpp3)
+Total_ts <- Total[-3] %>% 
+  mutate(Dia_c = as_date(fecha)) %>%
+  select(-fecha) %>%
+  as_tsibble(key = c(sub_region_2),
+             index = Dia_c)
+
+# Filter for Bar, Mad, Mal, Cor and, Cad
+Total_ts %>% filter(sub_region_2 == "Barcelona" | sub_region_2 == "Madrid" | 
+                    sub_region_2 == "Málaga" | sub_region_2 == "Sevilla" | 
+                    sub_region_2 == "Cádiz") -> Total_ts_b
+
+############################################
+Total_ts
+Total_ts_b
+Total_ts_b %>% distinct(sub_region_2)
+###########################################
+
+# Plots
+# A num_casos.x,num_casos.y
+autoplot(Total_ts_b, vars(num_casos.x,num_casos.y)) + 
+  labs(y = "Nº of Cases",
+       title = "Reported Cases (CNE A vs B)")
+ 
+# B Total (mobility)
+autoplot(Total_ts_b, Total) +
+  facet_wrap(~sub_region_2, scales = "free_y", ncol=2) + 
+  theme(legend.position = "top") + 
+  scale_x_date(date_minor_breaks = "1 day", name = "Time (Daily)") + 
+  ggtitle(label = "Mobility Change by Province (Barcelona, Madrid, Málaga, 
+          Córdoba and Cádiz)")
+
+# C sub_region_2 == "Barcelona" by month
+Total_ts %>% filter(sub_region_2 == "Barcelona") %>%
+  gg_season(num_casos.x, period = "month", labels = "both") +
+  theme(legend.position = "top") +
+  labs(y="Nº of Cases", title="Barcelona - Infections by Month")
+```
+
+### Correlation plots (from dataframe)
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Filter to "sub_region_2" == "Barcelona" or "Málaga"
+# Character / date columns are eliminated
+#library(corrplot)
+#### Málaga
+# pearson
+Total.res<-Total %>% 
+  filter(sub_region_2 == "Málaga")
+Total.res<-cor(Total.res[,c(-1,-2,-3)],method="pearson")
+corrplot.mixed(Total.res,upper="circle",number.cex=.65,tl.cex=.6, title="Málaga - 
+               pearson ")
+
+# spearman
+Total.res<-Total %>% 
+  filter(sub_region_2 == "Málaga")
+Total.res<-cor(Total.res[,c(-1,-2,-3)],method="spearman")
+corrplot.mixed(Total.res,upper="circle",number.cex=.65,tl.cex=.6, title="Málaga - 
+               spearman ")
+
+# kendall
+Total.res<-Total %>% 
+  filter(sub_region_2 == "Málaga")
+Total.res<-cor(Total.res[,c(-1,-2,-3)],method="kendall")
+corrplot.mixed(Total.res,upper="circle",number.cex=.65,tl.cex=.6, title="Málaga - 
+               kendall ")
+
+#### Barcelona
+# pearson
+Total.res<-Total %>% 
+  filter(sub_region_2 == "Barcelona")
+Total.res<-cor(Total.res[,c(-1,-2,-3)],method="pearson")
+corrplot.mixed(Total.res,upper="circle",number.cex=.65,tl.cex=.6, title="Barcelona -
+               pearson ")
+
+# spearman
+Total.res<-Total %>% 
+  filter(sub_region_2 == "Barcelona")
+Total.res<-cor(Total.res[,c(-1,-2,-3)],method="spearman")
+corrplot.mixed(Total.res,upper="circle",number.cex=.65,tl.cex=.6, title="Barcelona -
+               spearman ")
+
+# kendall
+Total.res<-Total %>% 
+  filter(sub_region_2 == "Barcelona")
+Total.res<-cor(Total.res[,c(-1,-2,-3)],method="kendall")
+corrplot.mixed(Total.res,upper="circle",number.cex=.65,tl.cex=.6, title="Barcelona -
+               kendall ")
+```
+
+### PCA (Barcelona)
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+pca <- prcomp(Total.res, scale = T)
+summary(pca)
+pca$rotation
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+if(!require(FactoMineR)){
+    install.packages('FactoMineR', repos='http://cran.us.r-project.org')
+    library(FactoMineR)}
+if(!require(factoextra)){
+    install.packages('factoextra', repos='http://cran.us.r-project.org')
+    library(factoextra)}
+
+# Var contribution for PC1-PC5
+fviz_contrib(pca, choice = "var", axes = 1)
+fviz_contrib(pca, choice = "var", axes = 2)
+fviz_contrib(pca, choice = "var", axes = 3)
+fviz_contrib(pca, choice = "var", axes = 4)
+fviz_contrib(pca, choice = "var", axes = 5)
+```
+
+### Review normality (Barcelona)
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Check for Barcelona 
+# Raw
+Total %>% 
+  filter(sub_region_2 == "Barcelona") -> Total_bar
+
+par(mfrow=c(2,2))
+
+hist(Total_bar$num_casos.x)
+hist(Total_bar$num_casos.y)
+
+qqnorm(Total_bar$num_casos.x, main="Nº Cases X")
+qqline(Total_bar$num_casos.x,col=2)
+
+qqnorm(Total_bar$num_casos.y, main="Nº Cases Y")
+qqline(Total_bar$num_casos.y,col=2)
+
+# Normalize
+library(DescTools)
+norm_num_casos.x <- BoxCox(Total_bar$num_casos.x, lambda = 
+                             BoxCoxLambda(Total_bar$num_casos.x))
+norm_num_casos.y <- BoxCox(Total_bar$num_casos.y, lambda = 
+                             BoxCoxLambda(Total_bar$num_casos.y))
+
+hist(norm_num_casos.x)
+hist(norm_num_casos.y)
+
+qqnorm(norm_num_casos.x, main="Nº Cases X")
+qqline(norm_num_casos.x,col=2)
+
+qqnorm(norm_num_casos.y, main="Nº Cases Y")
+qqline(norm_num_casos.y,col=2)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Columns removal according PCA results and SME knowledge
+Total <- Total[c(-3,-6,-7,-8,-10)]
+Total_bar <- Total_bar[c(-3,-6,-7,-8,-10)]
+Total_ts <- Total_ts[c(-4,-5,-6,-8)]
+Total_ts_b <- Total_ts_b[c(-4,-5,-6,-8)]
+table(Total_ts$sub_region_2)
+#str(Total_ts)
+summary(Total_ts)
+```
+
+### Final plots (Barcelona and others)
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Total_ts plots for the selected variables
+# % of mobility reported by INE and Google (EM3 study)
+Total_ts_b %>%
+  filter(sub_region_2 == "Barcelona") %>%
+  pivot_longer(c(2,13,14)) %>%
+  ggplot(aes(x = Dia_c, y = value)) +
+  geom_line() +
+  facet_grid(vars(name), scales = "free_y")+ 
+  labs(title = "Bar - Nº cases (CNE) vs % Residentail (Google) and Tot (INE) 
+       mobility change")
+
+# Barcelona Seasonal plot: Nº cases
+Total_ts_b %>%
+  filter(sub_region_2 == "Barcelona") %>%
+  gg_season(num_casos.x, labels = "both") +
+  labs(y = "Nº cases",
+       title = "Barcelona Seasonal plot: Nº cases") 
+
+# Barcelona Seasonal plot: Nº cases by month
+Total_ts_b %>%
+  filter(sub_region_2 == "Barcelona") %>%
+  gg_season(num_casos.x, period = "month") +
+  theme(legend.position = "none") +
+  labs(y="Nº cases", title="Barcelona Seasonal plot: Nº cases - month")
+
+# Barcelona scatter plot Nº cases vs residential_percent_change
+Total_ts_b %>%
+  filter(sub_region_2 == "Barcelona") %>%
+  ggplot(aes(x = num_casos.x, y = residential_percent_change_from_baseline )) +
+  geom_point() +
+  labs(x = "num_casos.x)",
+       y = "residential_percent_change",
+       title="Barcelona scatter plot Nº cases vs residential_percent_chang")
+
+#######################################
+# A - Nº cases per province (Barcelona, Madrid, Málaga, Córdoba and Cádiz)
+autoplot(Total_ts_b, num_casos.x) +
+  labs(y = "Nº cases",
+       title = "Nº cases per province")
+# B - Nº cases per province (Barcelona, Madrid, Málaga, Córdoba and Cádiz)
+Total_ts_b %>%
+  group_by(sub_region_2) %>%
+  summarise(CASOS = sum(num_casos.x))%>%
+  ggplot(aes(x = Dia_c, y = CASOS)) +
+  geom_line() +
+  facet_grid(vars(sub_region_2), scales = "free_y") +
+  labs(title = "Nº cases per province", y= "Nº cases")
+
+# B.b - Google % change residential mobility per province (Barcelona, Madrid, Málaga, Cádiz and Sevilla)
+Total_ts_b %>%
+  group_by(sub_region_2) %>%
+  summarise(per_c = (residential_percent_change_from_baseline))%>%
+  ggplot(aes(x = Dia_c, y = per_c)) +
+  geom_line() +
+  facet_grid(vars(sub_region_2), scales = "free_y") +
+  labs(title = "Google % change residential mobility per province", y= "% evolution")
+
+# B.c - EM3 % change residential mobility per province (Barcelona, Madrid, Málaga, Cádiz and Sevilla)
+Total_ts_b %>%
+  group_by(sub_region_2) %>%
+  summarise(per_c = (Total))%>%
+  ggplot(aes(x = Dia_c, y = per_c)) +
+  geom_line() +
+  facet_grid(vars(sub_region_2), scales = "free_y") +
+  labs(title = "EM3 % change residential mobility per province", y= "% evolution")
+
+
+# % residential percent change (Barcelona, Madrid, Málaga, Cádiz and Sevilla)
+autoplot(Total_ts_b, residential_percent_change_from_baseline ) +
+  labs(y = "% residential percent change",
+       title = "Residential percent change")
+
+# Nº cases per province and day of week + mean
+Total_ts_b %>%
+  gg_subseries(num_casos.x, period = "week") +
+  labs(y = "Nº cases + mean",
+       title = "Nº cases per province and day of week + mean")
+
+# Correlation plot / nº cases by province
+Total_ts_b %>%
+  group_by(sub_region_2) %>%
+  summarise(CASOS = sum(num_casos.x))%>%
+  pivot_wider(values_from=CASOS, names_from=sub_region_2) %>%
+  GGally::ggpairs(2:6)
+
+# % of mobility reported by Google - residential_percent_change
+autoplot(Total_ts_b, residential_percent_change_from_baseline) +
+  facet_wrap(~sub_region_2, scales = "free_y", ncol=2) + 
+  theme(legend.position = "top") + 
+  scale_x_date(date_minor_breaks = "1 day", name = "Time (Daily)") + 
+  ggtitle(label = "% of mobility reported by Google - home (Barcelona, Madrid, Málaga, Cádiz and Sevilla)")
+
+```
+
+# ARIMA - fpp3 library
+
+## STL (Seasonal and Trend decomposition using Loess - Barcelona, Madrid, Málaga, Cádiz and Sevilla)
+
+As stated by [@hyndman]... "STL has several advantages over classical decomposition, and the SEATS and X-11 methods:
+
+* Unlike SEATS and X-11, STL will handle any type of seasonality, not only monthly and quarterly data.
+* The seasonal component is allowed to change over time, and the rate of change can be controlled by the user.
+* The smoothness of the trend-cycle can also be controlled by the user.
+* It can be robust to outliers (i.e., the user can specify a robust decomposition), so that occasional unusual observations will not affect the estimates of the trend-cycle and seasonal components. They will, however, affect the remainder component"...
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Check Seasonal and trend 
+#Total_ts %>% 
+#  filter(sub_region_2 == "Barcelona") %>% 
+#  model(STL(num_casos.x)) %>%
+#  components() %>% 
+#  autoplot()
+
+#Total_ts %>% 
+#  filter(sub_region_2 == "Barcelona") %>% 
+#  model(STL(num_casos.x ~ season(window = 7))) %>%
+#  components() %>% 
+#  autoplot()
+
+Total_ts %>% 
+  #filter_index("2020-09-1" ~ "2020-12-31")  %>% 
+  filter(sub_region_2 == "Barcelona") %>% 
+  model(STL(num_casos.x ~ season(window = 7) +
+              trend(window = 7))) %>%
+  components() %>% 
+  autoplot() + labs(title="Barcelona")
+
+Total_ts %>% 
+  #filter_index("2020-09-1" ~ "2020-12-31")  %>% 
+  filter(sub_region_2 == "Madrid") %>% 
+  model(STL(num_casos.x ~ season(window = 7) +
+              trend(window = 7))) %>%
+  components() %>% 
+  autoplot() + labs(title="Madrid")
+
+Total_ts %>% 
+  #filter_index("2020-09-1" ~ "2020-12-31")  %>% 
+  filter(sub_region_2 == "Málaga") %>% 
+  model(STL(num_casos.x ~ season(window = 7) +
+              trend(window = 7))) %>%
+  components() %>% 
+  autoplot() + labs(title="Málaga")
+
+Total_ts %>% 
+  #filter_index("2020-09-1" ~ "2020-12-31")  %>% 
+  filter(sub_region_2 == "Cádiz") %>% 
+  model(STL(num_casos.x ~ season(window = 7) +
+              trend(window = 7))) %>%
+  components() %>% 
+  autoplot() + labs(title="Cádiz")
+
+Total_ts %>% 
+  #filter_index("2020-09-1" ~ "2020-12-31")  %>% 
+  filter(sub_region_2 == "Sevilla") %>% 
+  model(STL(num_casos.x ~ season(window = 7) +
+              trend(window = 7))) %>%
+  components() %>% 
+  autoplot() + labs(title="Sevilla")
+```
+
+## ACF and PACF (Barcelona, Madrid, Málaga, Córdoba and Cádiz)
+
+As stated by [@hyndman]... "ACF plot is also useful for identifying non-stationary time series. For a stationary time series, the ACF will drop to zero relatively quickly, while the ACF of non-stationary data decreases slowly. Also, for non-stationary data, the value of r 1 is often large and positive... PACF partial autocorrelations. These measure the relationship between yt and yt−k after removing the effects of lags 1,2,3,…,k−1."
+
+* Our time-series for Bar is non-stationary
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# New time-series for Bar, Mad, Mal, Cor and, Cad
+Total_ts %>% 
+  filter_index("2020-03-15" ~ "2020-12-31")  %>% 
+  filter(sub_region_2 == "Barcelona")-> Bar_N_cases #%>%
+Total_ts %>% 
+  filter_index("2020-03-15" ~ "2020-12-31")  %>% 
+  filter(sub_region_2 == "Madrid")-> Mad_N_cases #%>%
+Total_ts %>% 
+  filter_index("2020-03-15" ~ "2020-12-31")  %>% 
+  filter(sub_region_2 == "Málaga")-> Mal_N_cases #%>%
+Total_ts %>% 
+  filter_index("2020-03-15" ~ "2020-12-31")  %>% 
+  filter(sub_region_2 == "Cádiz")-> Cad_N_cases #%>%
+Total_ts %>% 
+  filter_index("2020-03-15" ~ "2020-12-31")  %>% 
+  filter(sub_region_2 == "Sevilla")-> Sev_N_cases #%>%
+
+# ACF
+Bar_N_cases %>%
+  ACF(num_casos.x, lag_max = 30) %>%
+  autoplot() +
+  labs(title=" Barcelona - ACF Nº Cases")
+Mad_N_cases %>%
+  ACF(num_casos.x, lag_max = 30) %>%
+  autoplot() +
+  labs(title=" Madrid - ACF Nº Cases")
+Mal_N_cases %>%
+  ACF(num_casos.x, lag_max = 30) %>%
+  autoplot() +
+  labs(title=" Málaga - ACF Nº Cases")
+Cad_N_cases %>%
+  ACF(num_casos.x, lag_max = 30) %>%
+  autoplot() +
+  labs(title=" Cádiz - ACF Nº Cases")
+Sev_N_cases %>%
+  ACF(num_casos.x, lag_max = 30) %>%
+  autoplot() +
+  labs(title=" Sevilla - ACF Nº Cases")
+
+# PACF
+Bar_N_cases %>%
+  PACF(num_casos.x, lag_max = 30) %>%
+  autoplot() +
+  labs(title="Barcelona - PACF Nº Cases")
+Mad_N_cases %>%
+  PACF(num_casos.x, lag_max = 30) %>%
+  autoplot() +
+  labs(title=" Madrid - PACF Nº Cases")
+Mal_N_cases %>%
+  PACF(num_casos.x, lag_max = 30) %>%
+  autoplot() +
+  labs(title=" Málaga - PACF Nº Cases")
+Cad_N_cases %>%
+  PACF(num_casos.x, lag_max = 30) %>%
+  autoplot() +
+  labs(title=" Cádiz - PACF Nº Cases")
+Sev_N_cases %>%
+  PACF(num_casos.x, lag_max = 30) %>%
+  autoplot() +
+  labs(title=" Sevilla - PACF Nº Cases")
+```
+
+Double difference is plotted.
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Difference
+#Bar_N_cases %>%
+#  gg_tsdisplay(difference(num_casos.x), 
+#               plot_type='partial', lag_max = 30)
+
+#Bar_N_cases %>%
+#  gg_tsdisplay(difference(log(num_casos.x)),
+#               plot_type='partial', lag_max = 30)
+
+# Difference double
+Bar_N_cases %>%
+  gg_tsdisplay(difference(num_casos.x) %>%
+               difference(), 
+               plot_type='partial', lag_max = 30)+
+  labs(title="Barcelona -  Difference double")
+
+Mad_N_cases %>%
+  gg_tsdisplay(difference(num_casos.x) %>%
+               difference(), 
+               plot_type='partial', lag_max = 30)+
+  labs(title="Madrid -  Difference double")
+
+Mal_N_cases %>%
+  gg_tsdisplay(difference(num_casos.x) %>%
+               difference(),
+               plot_type='partial', lag_max = 30)+
+  labs(title="Málaga -  Difference double")
+
+Cad_N_cases %>%
+  gg_tsdisplay(difference(num_casos.x) %>%
+               difference(), 
+               plot_type='partial', lag_max = 30)+
+  labs(title="Cádiz -  Difference double")
+
+Sev_N_cases %>%
+  gg_tsdisplay(difference(num_casos.x) %>%
+               difference(), 
+               plot_type='partial', lag_max = 30)+
+  labs(title="Sevilla -  Difference double")
+
+```
+
+## Model and Forecast (Barcelona, Madrid, Málaga, Córdoba and Cádiz)
+
+### Univariate (7, 14, 21 days) Barcelona
+
+As stated by [@hyndman]... "The ARIMA() function uses unitroot_nsdiffs() to determine D (the number of seasonal differences to use), and unitroot_ndiffs() to determine d (the number of ordinary differences to use), when these are not specified."
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Train and test ts
+Bar_N_cases_tr <- Bar_N_cases %>%
+  filter_index("2020-03-15" ~ "2020-12-9")
+Bar_N_cases_tt <- Bar_N_cases %>%
+  filter_index("2020-12-10" ~ "2020-12-31")
+
+# Model train
+fit_model <- Bar_N_cases_tr %>%
+  model(
+    SNaive = SNAIVE(num_casos.x),
+    arima_man = ARIMA(num_casos.x ~ pdq(2,1,2) + PDQ(1,1,1)),
+    arima_at1 = ARIMA(num_casos.x),
+    arima_at2 = ARIMA(num_casos.x, stepwise = FALSE, approx = FALSE)) 
+
+# Show and report model
+fit_model
+report(fit_model)
+
+# Good model >> Less Sigma / More BIC or AIC
+fit_model %>% pivot_longer(!sub_region_2, 
+                           names_to = "Model name",
+                           values_to = "Orders")
+glance(fit_model) %>% arrange(AICc) %>% select(.model:BIC)
+# We use a Ljung-Box test >> large p-value, confirmins residuals are similar to white noise.
+augment(fit_model) %>%
+  features(.innov, ljung_box, lag=7)
+augment(fit_model) %>%
+  features(.innov, ljung_box, lag=14)
+augment(fit_model) %>%
+  features(.innov, ljung_box, lag=21)
+
+fit_model %>% select(SNaive) %>% gg_tsresiduals()
+fit_model %>% select(arima_man) %>% gg_tsresiduals()
+fit_model %>% select(arima_at1) %>% gg_tsresiduals()
+fit_model %>% select(arima_at2) %>% gg_tsresiduals()
+
+# Significant spikes (at lag 6, 15, etc.) out of 30 is still consistent with white noise.
+# To be sure, use a Ljung-Box test, which has a large p-value, confirming that
+# the residuals are similar to white noise. 
+# Note that the alternative models also pass this test.
+
+# Forecast
+fc_h7<-fabletools::forecast(fit_model, h=7)
+fc_h14<-fabletools::forecast(fit_model, h=14)
+fc_h21<-fabletools::forecast(fit_model, h=21)
+
+# Accuracy 
+fabletools::accuracy(fc_h7, Bar_N_cases_tt)
+fabletools::accuracy(fc_h14, Bar_N_cases_tt)
+fabletools::accuracy(fc_h21, Bar_N_cases_tt)
+
+# Plots
+fc_h7 %>% 
+  #filter(.model=='arima_at1'|.model=='arima_at2'|.model=='SNaive') %>% 
+  autoplot(Bar_N_cases_tt) +
+  labs(title="Barcelona - forecast h7")
+
+fc_h14 %>% 
+  #filter(.model=='arima_at1'|.model=='arima_at2'|.model=='SNaive') %>% 
+  autoplot(Bar_N_cases_tt) +
+  labs(title="Barcelona - forecast h14")
+
+fc_h21 %>% 
+  #filter(.model=='arima_at1'|.model=='arima_at2'|.model=='SNaive') %>% 
+  autoplot(Bar_N_cases_tt) +
+  labs(title="Barcelona - forecast h21")
+```
+
+### Multivariate (7, 14, 21 days) Barcelona
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Model train
+# We have added mobility variables to models
+fit_model <- Bar_N_cases_tr %>%
+  model(
+    SNaive = SNAIVE(num_casos.x),
+    arima_man = ARIMA(num_casos.x ~ retail_and_recreation_percent_change_from_baseline +
+                        grocery_and_pharmacy_percent_change_from_baseline +  
+                        parks_percent_change_from_baseline +  
+                        transit_stations_percent_change_from_baseline + 
+                        workplaces_percent_change_from_baseline + 
+                        residential_percent_change_from_baseline + Total + pdq(2,1,2) + 
+                        PDQ(1,1,1)),
+    arima_at1 = ARIMA(num_casos.x~ retail_and_recreation_percent_change_from_baseline +
+                        grocery_and_pharmacy_percent_change_from_baseline +  
+                        parks_percent_change_from_baseline +  
+                        transit_stations_percent_change_from_baseline + 
+                        workplaces_percent_change_from_baseline + 
+                        residential_percent_change_from_baseline + Total),
+    arima_at2 = ARIMA(num_casos.x~ retail_and_recreation_percent_change_from_baseline +
+                        grocery_and_pharmacy_percent_change_from_baseline +  
+                        parks_percent_change_from_baseline +  
+                        transit_stations_percent_change_from_baseline + 
+                        workplaces_percent_change_from_baseline + 
+                        residential_percent_change_from_baseline + Total, 
+                      stepwise = FALSE,approx = FALSE))
+
+# Show and report model
+fit_model
+report(fit_model)
+
+# Good model >> Less Sigma - More BIC or AIC
+fit_model %>% pivot_longer(!sub_region_2, 
+                           names_to = "Model name",
+                           values_to = "Orders")
+glance(fit_model) %>% arrange(AICc) %>% select(.model:BIC)
+# We use a Ljung-Box test >> large p-value, confirmins residuals are similar to white noise.
+augment(fit_model) %>%
+  features(.innov, ljung_box, lag=7)
+augment(fit_model) %>%
+  features(.innov, ljung_box, lag=14)
+augment(fit_model) %>%
+  features(.innov, ljung_box, lag=21)
+
+fit_model %>% select(SNaive) %>% gg_tsresiduals()
+fit_model %>% select(arima_man) %>% gg_tsresiduals()
+fit_model %>% select(arima_at1) %>% gg_tsresiduals()
+fit_model %>% select(arima_at2) %>% gg_tsresiduals()
+
+# Significant spikes out of 30 is still consistent with white noise.
+# To be sure, use a Ljung-Box test, which has a large p-value, confirming that the 
+# residuals are similar to white noise. 
+# Note that the alternative models also pass this test.
+
+# New data (dynamic regression)
+# Here it is needed generate future values for the exogenous variables
+# Foir simplicity we select a rand number included into the 2nd and 3rd quantile for
+# the variable
+# h7
+Bar_N_cases_fr7 <- new_data(Bar_N_cases_tr, 7) %>%
+  mutate(retail_and_recreation_percent_change_from_baseline =
+           runif(7,quantile(Bar_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                            0.25),
+                 quantile(Bar_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                          0.75)),
+         grocery_and_pharmacy_percent_change_from_baseline = 
+           runif(7,quantile(Bar_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                            0.25),
+                 quantile(Bar_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                          0.75)),
+         parks_percent_change_from_baseline = 
+           runif(7,quantile(Bar_N_cases_tr$parks_percent_change_from_baseline,
+                            0.25),
+                 quantile(Bar_N_cases_tt$parks_percent_change_from_baseline,
+                          0.75)),
+         transit_stations_percent_change_from_baseline = 
+           runif(7,quantile(Bar_N_cases_tt$transit_stations_percent_change_from_baseline,
+                            0.25),
+                 quantile(Bar_N_cases_tt$transit_stations_percent_change_from_baseline,
+                          0.75)),
+         workplaces_percent_change_from_baseline = 
+           runif(7,quantile(Bar_N_cases_tt$workplaces_percent_change_from_baseline,
+                            0.25),
+                 quantile(Bar_N_cases_tt$workplaces_percent_change_from_baseline,
+                          0.75)),
+         residential_percent_change_from_baseline = 
+           runif(7,quantile(Bar_N_cases_tt$residential_percent_change_from_baseline,
+                            0.25),
+                 quantile(Bar_N_cases_tt$residential_percent_change_from_baseline,
+                          0.75)),
+         Total = runif(7,quantile(Bar_N_cases_tt$Total,0.25),
+                       quantile(Bar_N_cases_tt$Total,0.75)))
+
+# h14
+Bar_N_cases_fr14 <- new_data(Bar_N_cases_tr, 14) %>%
+  mutate(retail_and_recreation_percent_change_from_baseline = 
+           runif(14,quantile(Bar_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                          0.75)),
+         grocery_and_pharmacy_percent_change_from_baseline =
+           runif(14,quantile(Bar_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                          0.75)),
+         parks_percent_change_from_baseline = 
+           runif(14,quantile(Bar_N_cases_tt$parks_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$parks_percent_change_from_baseline,
+                          0.75)),
+         transit_stations_percent_change_from_baseline = 
+           runif(14,quantile(Bar_N_cases_tt$transit_stations_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$transit_stations_percent_change_from_baseline,
+                          0.75)),
+         workplaces_percent_change_from_baseline = 
+           runif(14,quantile(Bar_N_cases_tt$workplaces_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$workplaces_percent_change_from_baseline,
+                          0.75)),
+         residential_percent_change_from_baseline = 
+           runif(14,quantile(Bar_N_cases_tt$residential_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$residential_percent_change_from_baseline,
+                          0.75)),
+         Total = runif(14,quantile(Bar_N_cases_tt$Total,0.25),
+                       quantile(Bar_N_cases_tt$Total,0.75)))
+
+# h21
+Bar_N_cases_fr21 <- new_data(Bar_N_cases_tr, 21) %>%
+  mutate(retail_and_recreation_percent_change_from_baseline = 
+           runif(21,quantile(Bar_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                          0.75)),
+         grocery_and_pharmacy_percent_change_from_baseline = 
+           runif(21,quantile(Bar_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                          0.75)),
+         parks_percent_change_from_baseline =
+           runif(21,quantile(Bar_N_cases_tt$parks_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$parks_percent_change_from_baseline,
+                          0.75)),
+         transit_stations_percent_change_from_baseline = 
+           runif(21,quantile(Bar_N_cases_tt$transit_stations_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$transit_stations_percent_change_from_baseline,
+                          0.75)),
+         workplaces_percent_change_from_baseline = 
+           runif(21,quantile(Bar_N_cases_tt$workplaces_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$workplaces_percent_change_from_baseline,
+                          0.75)),
+         residential_percent_change_from_baseline = 
+           runif(21,quantile(Bar_N_cases_tt$residential_percent_change_from_baseline,
+                             0.25),
+                 quantile(Bar_N_cases_tt$residential_percent_change_from_baseline,
+                          0.75)),
+         Total = runif(21,quantile(Bar_N_cases_tt$Total,0.25),
+                       quantile(Bar_N_cases_tt$Total,0.75)))
+
+# Forecast
+fc_fh7<-fabletools::forecast(fit_model, new_data = Bar_N_cases_fr7)
+fc_fh14<-fabletools::forecast(fit_model, new_data = Bar_N_cases_fr14)
+fc_fh21<-fabletools::forecast(fit_model, new_data = Bar_N_cases_fr21)
+
+# Accuracy
+fabletools::accuracy(fc_fh7, Bar_N_cases)
+fabletools::accuracy(fc_fh14, Bar_N_cases)
+fabletools::accuracy(fc_fh21, Bar_N_cases)
+
+# Plots
+fc_fh7 %>% 
+  #filter(.model=='arima_at1'|.model=='arima_at2'|.model=='SNaive') %>% 
+  autoplot(Bar_N_cases_tt) +
+  labs(title="Barcelona - forecast h7")
+
+fc_fh14 %>% 
+  #filter(.model=='arima_at1'|.model=='arima_at2'|.model=='SNaive') %>% 
+  autoplot(Bar_N_cases_tt) +
+  labs(title="Barcelona - forecast h14")
+
+fc_fh21 %>% 
+  #filter(.model=='arima_at1'|.model=='arima_at2'|.model=='SNaive') %>% 
+  autoplot(Bar_N_cases_tt) +
+  labs(title="Barcelona - forecast h21")
+```
+
+### Univariate (7, 14, 21 days) Madrid, Málaga, Córdoba and Cádiz
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Train and test ts
+# Train
+Mad_N_cases_tr <- Mad_N_cases %>%
+  filter_index("2020-03-15" ~ "2020-12-9")
+Mal_N_cases_tr <- Mal_N_cases %>%
+  filter_index("2020-03-15" ~ "2020-12-9")
+Cad_N_cases_tr <- Cad_N_cases %>%
+  filter_index("2020-03-15" ~ "2020-12-9")
+Sev_N_cases_tr <- Sev_N_cases %>%
+  filter_index("2020-03-15" ~ "2020-12-9")
+
+# Test
+Mad_N_cases_tt <- Mad_N_cases %>%
+  filter_index("2020-12-10" ~ "2020-12-31")
+Mal_N_cases_tt <- Mal_N_cases %>%
+  filter_index("2020-12-10" ~ "2020-12-31")
+Cad_N_cases_tt <- Cad_N_cases %>%
+  filter_index("2020-12-10" ~ "2020-12-31")
+Sev_N_cases_tt <- Sev_N_cases %>%
+  filter_index("2020-12-10" ~ "2020-12-31")
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+####### Madrid ####### 
+# Model train
+Mad_fit_model <- Mad_N_cases_tr %>%
+  model(
+    SNaive = SNAIVE(num_casos.x),
+    arima_man = ARIMA(num_casos.x ~ pdq(2,1,2) + PDQ(1,1,1)),
+    arima_at1 = ARIMA(num_casos.x),
+    arima_at2 = ARIMA(num_casos.x, stepwise = FALSE,approx = FALSE))
+
+Mad_fit_model %>% pivot_longer(!sub_region_2, 
+                           names_to = "Model name",
+                           values_to = "Orders")
+
+# Good model >> Less Sigma / More BIC or AIC
+glance(Mad_fit_model) %>% arrange(AICc) %>% select(.model:BIC)
+Mad_fit_model %>% select(SNaive) %>% gg_tsresiduals()
+Mad_fit_model %>% select(arima_man) %>% gg_tsresiduals()
+Mad_fit_model %>% select(arima_at1) %>% gg_tsresiduals()
+Mad_fit_model %>% select(arima_at2) %>% gg_tsresiduals()
+
+augment(Mad_fit_model) %>%
+  features(.innov, ljung_box, lag=7)
+augment(Mad_fit_model) %>%
+  features(.innov, ljung_box, lag=14)
+augment(Mad_fit_model) %>%
+  features(.innov, ljung_box, lag=21)
+
+# Forecast
+Mad_fc_h7<-fabletools::forecast(Mad_fit_model, h=7)
+Mad_fc_h14<-fabletools::forecast(Mad_fit_model, h=14)
+Mad_fc_h21<-fabletools::forecast(Mad_fit_model, h=21)
+# Accuracy
+fabletools::accuracy(Mad_fc_h7, Mad_N_cases_tt)
+fabletools::accuracy(Mad_fc_h14, Mad_N_cases_tt)
+fabletools::accuracy(Mad_fc_h21, Mad_N_cases_tt)
+# Plots
+Mad_fc_h7 %>% 
+  autoplot(Mad_N_cases_tt) +
+  labs(title="Madrid - forecast h7")
+Mad_fc_h14 %>% 
+  autoplot(Mad_N_cases_tt) +
+  labs(title="Madrid - forecast h14")
+Mad_fc_h21 %>% 
+  autoplot(Mad_N_cases_tt) +
+  labs(title="Madrid - forecast h21")
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+####### Málaga ####### 
+# Model train
+Mal_fit_model <- Mal_N_cases_tr %>%
+  model(
+    SNaive = SNAIVE(num_casos.x),
+    arima_man = ARIMA(num_casos.x ~ pdq(2,1,2) + PDQ(1,1,1)),
+    arima_at1 = ARIMA(num_casos.x),
+    arima_at2 = ARIMA(num_casos.x, stepwise = FALSE,approx = FALSE))
+
+Mal_fit_model %>% pivot_longer(!sub_region_2, 
+                           names_to = "Model name",
+                           values_to = "Orders")
+
+# Good model >> Less Sigma / More BIC or AIC
+glance(Mal_fit_model) %>% arrange(AICc) %>% select(.model:BIC)
+Mal_fit_model %>% select(SNaive) %>% gg_tsresiduals()
+Mal_fit_model %>% select(arima_man) %>% gg_tsresiduals()
+Mal_fit_model %>% select(arima_at1) %>% gg_tsresiduals()
+Mal_fit_model %>% select(arima_at2) %>% gg_tsresiduals()
+
+augment(Mal_fit_model) %>%
+  features(.innov, ljung_box, lag=7)
+augment(Mal_fit_model) %>%
+  features(.innov, ljung_box, lag=14)
+augment(Mal_fit_model) %>%
+  features(.innov, ljung_box, lag=21)
+
+# Forecast
+Mal_fc_h7<-fabletools::forecast(Mal_fit_model, h=7)
+Mal_fc_h14<-fabletools::forecast(Mal_fit_model, h=14)
+Mal_fc_h21<-fabletools::forecast(Mal_fit_model, h=21)
+# Accuracy
+fabletools::accuracy(Mal_fc_h7, Mal_N_cases_tt)
+fabletools::accuracy(Mal_fc_h14, Mal_N_cases_tt)
+fabletools::accuracy(Mal_fc_h21, Mal_N_cases_tt)
+# Plots
+Mal_fc_h7 %>% 
+  autoplot(Mal_N_cases_tt) +
+  labs(title="Málaga - forecast h7")
+Mal_fc_h14 %>% 
+  autoplot(Mal_N_cases_tt) +
+  labs(title="Málaga - forecast h14")
+Mal_fc_h21 %>% 
+  autoplot(Mal_N_cases_tt) +
+  labs(title="Málaga - forecast h21")
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+####### Cádiz ####### 
+# Model train
+Cad_fit_model <- Cad_N_cases_tr %>%
+  model(
+    SNaive = SNAIVE(num_casos.x),
+    arima_man = ARIMA(num_casos.x ~ pdq(2,1,2) + PDQ(1,1,1)),
+    arima_at1 = ARIMA(num_casos.x),
+    arima_at2 = ARIMA(num_casos.x, stepwise = FALSE,approx = FALSE))
+
+Cad_fit_model %>% pivot_longer(!sub_region_2, 
+                           names_to = "Model name",
+                           values_to = "Orders")
+
+# Good model >> Less Sigma / More BIC or AIC
+glance(Cad_fit_model) %>% arrange(AICc) %>% select(.model:BIC)
+Cad_fit_model %>% select(SNaive) %>% gg_tsresiduals()
+Cad_fit_model %>% select(arima_man) %>% gg_tsresiduals()
+Cad_fit_model %>% select(arima_at1) %>% gg_tsresiduals()
+Cad_fit_model %>% select(arima_at2) %>% gg_tsresiduals()
+
+augment(Cad_fit_model) %>%
+  features(.innov, ljung_box, lag=7)
+augment(Cad_fit_model) %>%
+  features(.innov, ljung_box, lag=14)
+augment(Cad_fit_model) %>%
+  features(.innov, ljung_box, lag=21)
+
+# Forecast
+Cad_fc_h7<-fabletools::forecast(Cad_fit_model, h=7)
+Cad_fc_h14<-fabletools::forecast(Cad_fit_model, h=14)
+Cad_fc_h21<-fabletools::forecast(Cad_fit_model, h=21)
+# Accuracy
+fabletools::accuracy(Cad_fc_h7, Cad_N_cases_tt)
+fabletools::accuracy(Cad_fc_h14, Cad_N_cases_tt)
+fabletools::accuracy(Cad_fc_h21, Cad_N_cases_tt)
+# Plots
+Cad_fc_h7 %>% 
+  autoplot(Cad_N_cases_tt) +
+  labs(title="Cádiz - forecast h7")
+Cad_fc_h14 %>% 
+  autoplot(Cad_N_cases_tt) +
+  labs(title="Cádiz - forecast h14")
+Cad_fc_h21 %>% 
+  autoplot(Cad_N_cases_tt) +
+  labs(title="Cádiz - forecast h21")
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+####### Sevilla ####### 
+# Model train
+Sev_fit_model <- Sev_N_cases_tr %>%
+  model(
+    SNaive = SNAIVE(num_casos.x),
+    arima_man = ARIMA(num_casos.x ~ pdq(2,1,2) + PDQ(1,1,1)),
+    arima_at1 = ARIMA(num_casos.x),
+    arima_at2 = ARIMA(num_casos.x, stepwise = FALSE,approx = FALSE))
+
+# Good model >> Less Sigma / More BIC or AIC
+glance(Sev_fit_model) %>% arrange(AICc) %>% select(.model:BIC)
+Sev_fit_model %>% select(SNaive) %>% gg_tsresiduals()
+Sev_fit_model %>% select(arima_man) %>% gg_tsresiduals()
+Sev_fit_model %>% select(arima_at1) %>% gg_tsresiduals()
+Sev_fit_model %>% select(arima_at2) %>% gg_tsresiduals()
+
+augment(Sev_fit_model) %>%
+  features(.innov, ljung_box, lag=7, dof=3)
+augment(Sev_fit_model) %>%
+  features(.innov, ljung_box, lag=14, dof=3)
+augment(Sev_fit_model) %>%
+  features(.innov, ljung_box, lag=21, dof=3)
+
+# Forecast
+Sev_fc_h7<-fabletools::forecast(Sev_fit_model, h=7)
+Sev_fc_h14<-fabletools::forecast(Sev_fit_model, h=14)
+Sev_fc_h21<-fabletools::forecast(Sev_fit_model, h=21)
+# Accuracy
+fabletools::accuracy(Sev_fc_h7, Sev_N_cases_tt)
+fabletools::accuracy(Sev_fc_h14, Sev_N_cases_tt)
+fabletools::accuracy(Sev_fc_h21, Sev_N_cases_tt)
+# Plots
+Sev_fc_h7 %>% 
+  autoplot(Sev_N_cases_tt) +
+  labs(title="Sevilla - forecast h7")
+Sev_fc_h14 %>% 
+  autoplot(Sev_N_cases_tt) +
+  labs(title="Sevilla - forecast h14")
+Sev_fc_h21 %>% 
+  autoplot(Sev_N_cases_tt) +
+  labs(title="Sevilla - forecast h21")
+
+```
+
+### Multivariate (7, 14, 21 days) Málaga
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Model train
+# We have added mobility variables to models
+fit_model <- Mal_N_cases_tr %>%
+  model(
+    SNaive = SNAIVE(num_casos.x),
+    arima_man = ARIMA(num_casos.x ~ retail_and_recreation_percent_change_from_baseline +
+                        grocery_and_pharmacy_percent_change_from_baseline +  
+                        parks_percent_change_from_baseline +  
+                        transit_stations_percent_change_from_baseline + 
+                        workplaces_percent_change_from_baseline + 
+                        residential_percent_change_from_baseline + Total + pdq(2,1,2) + 
+                        PDQ(1,1,1)),
+    arima_at1 = ARIMA(num_casos.x~ retail_and_recreation_percent_change_from_baseline +
+                        grocery_and_pharmacy_percent_change_from_baseline +  
+                        parks_percent_change_from_baseline +  
+                        transit_stations_percent_change_from_baseline + 
+                        workplaces_percent_change_from_baseline + 
+                        residential_percent_change_from_baseline + Total),
+    arima_at2 = ARIMA(num_casos.x~ retail_and_recreation_percent_change_from_baseline +
+                        grocery_and_pharmacy_percent_change_from_baseline +  
+                        parks_percent_change_from_baseline +  
+                        transit_stations_percent_change_from_baseline + 
+                        workplaces_percent_change_from_baseline + 
+                        residential_percent_change_from_baseline + Total, 
+                      stepwise = FALSE,approx = FALSE))
+
+# Show and report model
+fit_model
+report(fit_model)
+
+# Good model >> Less Sigma - More BIC or AIC
+fit_model %>% pivot_longer(!sub_region_2, 
+                           names_to = "Model name",
+                           values_to = "Orders")
+glance(fit_model) %>% arrange(AICc) %>% select(.model:BIC)
+# We use a Ljung-Box test >> large p-value, confirmins residuals are similar to white noise.
+augment(fit_model) %>%
+  features(.innov, ljung_box, lag=7)
+augment(fit_model) %>%
+  features(.innov, ljung_box, lag=14)
+augment(fit_model) %>%
+  features(.innov, ljung_box, lag=21)
+
+fit_model %>% select(SNaive) %>% gg_tsresiduals()
+fit_model %>% select(arima_man) %>% gg_tsresiduals()
+fit_model %>% select(arima_at1) %>% gg_tsresiduals()
+fit_model %>% select(arima_at2) %>% gg_tsresiduals()
+
+# Significant spikes out of 30 is still consistent with white noise.
+# To be sure, use a Ljung-Box test, which has a large p-value, confirming that the 
+# residuals are similar to white noise. 
+# Note that the alternative models also pass this test.
+
+# New data (dynamic regression)
+# Here it is needed generate future values for the exogenous variables
+# Foir simplicity we select a rand number included into the 2nd and 3rd quantile for
+# the variable
+# h7
+Mal_N_cases_fr7 <- new_data(Mal_N_cases_tr, 7) %>%
+  mutate(retail_and_recreation_percent_change_from_baseline =
+           runif(7,quantile(Mal_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                            0.25),
+                 quantile(Mal_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                          0.75)),
+         grocery_and_pharmacy_percent_change_from_baseline = 
+           runif(7,quantile(Mal_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                            0.25),
+                 quantile(Mal_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                          0.75)),
+         parks_percent_change_from_baseline = 
+           runif(7,quantile(Mal_N_cases_tr$parks_percent_change_from_baseline,
+                            0.25),
+                 quantile(Mal_N_cases_tt$parks_percent_change_from_baseline,
+                          0.75)),
+         transit_stations_percent_change_from_baseline = 
+           runif(7,quantile(Mal_N_cases_tt$transit_stations_percent_change_from_baseline,
+                            0.25),
+                 quantile(Mal_N_cases_tt$transit_stations_percent_change_from_baseline,
+                          0.75)),
+         workplaces_percent_change_from_baseline = 
+           runif(7,quantile(Mal_N_cases_tt$workplaces_percent_change_from_baseline,
+                            0.25),
+                 quantile(Mal_N_cases_tt$workplaces_percent_change_from_baseline,
+                          0.75)),
+         residential_percent_change_from_baseline = 
+           runif(7,quantile(Mal_N_cases_tt$residential_percent_change_from_baseline,
+                            0.25),
+                 quantile(Mal_N_cases_tt$residential_percent_change_from_baseline,
+                          0.75)),
+         Total = runif(7,quantile(Mal_N_cases_tt$Total,0.25),
+                       quantile(Mal_N_cases_tt$Total,0.75)))
+
+# h14
+Mal_N_cases_fr14 <- new_data(Mal_N_cases_tr, 14) %>%
+  mutate(retail_and_recreation_percent_change_from_baseline = 
+           runif(14,quantile(Mal_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                          0.75)),
+         grocery_and_pharmacy_percent_change_from_baseline =
+           runif(14,quantile(Mal_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                          0.75)),
+         parks_percent_change_from_baseline = 
+           runif(14,quantile(Mal_N_cases_tt$parks_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$parks_percent_change_from_baseline,
+                          0.75)),
+         transit_stations_percent_change_from_baseline = 
+           runif(14,quantile(Mal_N_cases_tt$transit_stations_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$transit_stations_percent_change_from_baseline,
+                          0.75)),
+         workplaces_percent_change_from_baseline = 
+           runif(14,quantile(Mal_N_cases_tt$workplaces_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$workplaces_percent_change_from_baseline,
+                          0.75)),
+         residential_percent_change_from_baseline = 
+           runif(14,quantile(Mal_N_cases_tt$residential_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$residential_percent_change_from_baseline,
+                          0.75)),
+         Total = runif(14,quantile(Mal_N_cases_tt$Total,0.25),
+                       quantile(Mal_N_cases_tt$Total,0.75)))
+
+# h21
+Mal_N_cases_fr21 <- new_data(Mal_N_cases_tr, 21) %>%
+  mutate(retail_and_recreation_percent_change_from_baseline = 
+           runif(21,quantile(Mal_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$retail_and_recreation_percent_change_from_baseline,
+                          0.75)),
+         grocery_and_pharmacy_percent_change_from_baseline = 
+           runif(21,quantile(Mal_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$grocery_and_pharmacy_percent_change_from_baseline,
+                          0.75)),
+         parks_percent_change_from_baseline =
+           runif(21,quantile(Mal_N_cases_tt$parks_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$parks_percent_change_from_baseline,
+                          0.75)),
+         transit_stations_percent_change_from_baseline = 
+           runif(21,quantile(Mal_N_cases_tt$transit_stations_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$transit_stations_percent_change_from_baseline,
+                          0.75)),
+         workplaces_percent_change_from_baseline = 
+           runif(21,quantile(Mal_N_cases_tt$workplaces_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$workplaces_percent_change_from_baseline,
+                          0.75)),
+         residential_percent_change_from_baseline = 
+           runif(21,quantile(Mal_N_cases_tt$residential_percent_change_from_baseline,
+                             0.25),
+                 quantile(Mal_N_cases_tt$residential_percent_change_from_baseline,
+                          0.75)),
+         Total = runif(21,quantile(Mal_N_cases_tt$Total,0.25),
+                       quantile(Mal_N_cases_tt$Total,0.75)))
+
+# Forecast
+fc_fh7<-fabletools::forecast(fit_model, new_data = Mal_N_cases_fr7)
+fc_fh14<-fabletools::forecast(fit_model, new_data = Mal_N_cases_fr14)
+fc_fh21<-fabletools::forecast(fit_model, new_data = Mal_N_cases_fr21)
+
+# Accuracy
+fabletools::accuracy(fc_fh7, Mal_N_cases)
+fabletools::accuracy(fc_fh14, Mal_N_cases)
+fabletools::accuracy(fc_fh21, Mal_N_cases)
+
+# Plots
+fc_fh7 %>% 
+  #filter(.model=='arima_at1'|.model=='arima_at2'|.model=='SNaive') %>% 
+  autoplot(Mal_N_cases_tt) +
+  labs(title="Málaga - forecast h7")
+
+fc_fh14 %>% 
+  #filter(.model=='arima_at1'|.model=='arima_at2'|.model=='SNaive') %>% 
+  autoplot(Mal_N_cases_tt) +
+  labs(title="Málaga - forecast h14")
+
+fc_fh21 %>% 
+  #filter(.model=='arima_at1'|.model=='arima_at2'|.model=='SNaive') %>% 
+  autoplot(Mal_N_cases_tt) +
+  labs(title="Málaga - forecast h21")
+```
+
+
+## Till here 16-Apr-2021
+
+# Bibliography
