@@ -1,0 +1,334 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# ARIMA - OPT B (R base + others)
+
+* library(astsa)
+* library(forecast)
+* library(tseries)
+* library(ggplot2)
+
+## Seasonal and Trend decomposition
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Source Total
+library(dplyr)
+tot <- read.csv('Total.csv', 
+                        header=TRUE, 
+                        sep = ";", 
+                        stringsAsFactors = FALSE)
+
+#tot_bar <- tot %>% filter(sub_region_2=="Sevilla")
+tot_bar <- tot %>% filter(sub_region_2=="Barcelona")
+tot_bar$Total <- sub(",", ".", tot_bar$Total)
+tot_bar$Total <- as.numeric(tot_bar$Total)
+library(lubridate)
+tot_bar$fecha <- as.Date(tot_bar$fecha, format="%Y-%m-%d")
+
+tot_bar_ts <- ts(data = tot_bar[c(-1,-3)], 
+                 #start = as.Date("2020-03-16"),
+                 start = decimal_date(as.Date("2020-03-16")), 
+                 frequency = 365)
+                 #frequency = 7)
+
+class(tot_bar_ts)
+colnames(tot_bar_ts)
+frequency(tot_bar_ts[,2])
+cycle(tot_bar_ts[,2])
+length(tot_bar_ts[,2])
+
+# Test
+tot_bar_ts_tr<- window(tot_bar_ts[], 
+       start=decimal_date(as.Date("2020-03-16")),
+       end=decimal_date(as.Date("2020-11-30")))
+plot(tot_bar_ts_tr[,2])
+# Train
+tot_bar_ts_tt<- window(tot_bar_ts[], 
+       start=decimal_date(as.Date("2020-12-01")),
+       end=decimal_date(as.Date("2020-12-30"))) 
+plot(tot_bar_ts_tt[,2])
+
+library(seastests)
+# Check seasonality
+print("Test non-seasonal series")
+# If the p-value of the QS-test is below 0.01 or the p-value of the
+# kwman-test is below 0.002, the WO-test will classify the 
+# corresponding time series as seasonal
+wo(tot_bar_ts)
+print("Test using the non-seasonal series")
+isSeasonal(tot_bar_ts)
+# ARIMA model is not valid
+# We will neeed SARIMA (seasonality)
+
+# Check if TS needs differenciation (if 1 means d=1)
+# Eliminate tendency
+library(forecast)
+ndiffs(tot_bar_ts[,1])
+
+# Plot
+plot(tot_bar_ts[,2])
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+plot(tot_bar_ts[,2])
+linearModel = lm(tot_bar_ts[,2] ~ time(tot_bar_ts[,1]))
+abline(reg = linearModel) 
+
+# Boxplot(tot_bar_ts[,1] ~ cycle(tot_bar_ts[,1])) 
+# plot across week, a sense on seasonal effect
+
+library(forecast)
+fit_1 <- ses((tot_bar_ts_tr[,2]), h=30)
+fit_2 <- holt((tot_bar_ts_tr[,2]), h=30)
+fit_3 <- holt((tot_bar_ts_tr[,2]), h=30, damped=TRUE)
+#fit_4 <- hw(tot_bar_ts[,2], h=30, seasonal = "additive")
+#fit_5 <- hw(tot_bar_ts[,2], h=30, seasonal = "multiplicative")
+#fit_6 <- tslm(tot_bar_ts[,2] ~  trend + season) %>% forecast(h=30)
+
+accuracy(fit_1,(tot_bar_ts_tt[,2]))#, start=261))
+plot(fit_1)
+accuracy(fit_2,(tot_bar_ts_tt[,2]))#, start=261))
+plot(fit_2)
+accuracy(fit_3,(tot_bar_ts_tt[,2]))#, start=261))
+plot(fit_3)
+#accuracy(fit_4)
+#accuracy(fit_5)
+#accuracy(fit_6)
+
+tmp <- cbind(Data=tot_bar_ts[,2],
+             SES=fit_1$mean,
+             Holts=fit_2$mean,
+             Damped_trend=fit_3$mean#,
+             #HW_add=fit_4$mean,
+             #HW_mul=fit_5$mean,
+             #TSLM=fit_6$mean
+             )
+
+autoplot(tmp)
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+#tot_bar_ts_dc<-decompose(tot_bar_ts[,2])
+#plot(tot_bar_ts_dc)
+
+# Check differences + logs
+# D0
+tot_bar_ts_d0<-(tot_bar_ts_tr[,2])
+plot(tot_bar_ts_d0)
+# D1
+tot_bar_ts_d1<-diff(tot_bar_ts_tr[,2], differences=1)
+plot(tot_bar_ts_d1)
+# D2
+tot_bar_ts_d2<-diff(tot_bar_ts[,2], differences=2)
+plot(tot_bar_ts_d2)
+
+# D1l
+tot_bar_ts_d1l<-diff(log(tot_bar_ts_tr[,2]), differences=1)
+plot(tot_bar_ts_d1l)
+# D2l
+tot_bar_ts_d2l<-diff(log(tot_bar_ts_tr[,2]), differences=2)
+plot(tot_bar_ts_d2l)
+# D2ll7
+#tot_bar_ts_d2ll7<-diff(log(tot_bar_ts[,2]), differences=2, lag=7)
+#plot(tot_bar_ts_d2ll7)
+
+# ACF - How a observation influence over the next one
+acf(tot_bar_ts_tr[,2], lag.max = 30)
+acf(tot_bar_ts_d1, lag.max = 30)
+acf(tot_bar_ts_d2, lag.max = 30)
+acf(tot_bar_ts_d1l, lag.max = 30)
+acf(tot_bar_ts_d2l, lag.max = 30)
+#acf(tot_bar_ts_d2ll7, lag.max = 30)
+
+# PACF - Relation between observations (separated k elements)
+pacf(tot_bar_ts_tr[,2], lag.max = 30)
+pacf(tot_bar_ts_d1, lag.max = 30)
+pacf(tot_bar_ts_d2, lag.max = 30)
+pacf(tot_bar_ts_d1l, lag.max = 30)
+pacf(tot_bar_ts_d2l, lag.max = 30)
+#pacf(tot_bar_ts_d2ll7, lag.max = 30)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(tseries) # for ADF test
+# ADF - Stationarity test
+# HO no stationarity
+# H1 stationarity
+# which means our strategy (diff / 2 diffs or log + diff) is right.
+# Our series "seems" stationary
+
+# Kpss - Stationarity serie test with tendency
+# HO - Tendency or statrionary level
+# H1 - No tendency or No statrionary level
+
+print("orginal------------------------------------------------")
+adf.test(tot_bar_ts_tr[,2], alternative="stationary")
+kpss.test(tot_bar_ts_tr[,2])
+print("1d------------------------------------------------")
+adf.test(tot_bar_ts_d1, alternative="stationary")
+kpss.test(tot_bar_ts_d1)
+print("2d------------------------------------------------")
+adf.test(tot_bar_ts_d2, alternative="stationary")
+kpss.test(tot_bar_ts_d2)
+print("1dl------------------------------------------------")
+adf.test(tot_bar_ts_d1l, alternative="stationary")
+kpss.test(tot_bar_ts_d1l)
+print("2dl------------------------------------------------")
+adf.test(tot_bar_ts_d2l, alternative="stationary")
+kpss.test(tot_bar_ts_d2l)
+
+#adf.test(tot_bar_ts_d2l7, alternative="stationary", k=0)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Residuals of the model tells if the model is good.
+# Low "p" reflects a bad model 
+# Ljung-Box test tells if we have independence of residuals (low p - we reject)
+print("orginal------------------------------------------------")
+autoArimaModel = auto.arima(tot_bar_ts_tr[,2], d = 0 )
+autoArimaModel
+accuracy(autoArimaModel)
+Box.test(autoArimaModel$residuals, lag=30, type="Ljung-Box")
+checkresiduals(autoArimaModel)
+
+print("1d------------------------------------------------")
+autoArimaModel = auto.arima(tot_bar_ts_tr[,2], d = 1)
+autoArimaModel
+accuracy(autoArimaModel)
+Box.test(autoArimaModel$residuals, lag=30, type="Ljung-Box")
+checkresiduals(autoArimaModel)
+
+print("1dl-----------------------------------------------")
+autoArimaModel = auto.arima(log(tot_bar_ts_tr[,2]), d = 1)
+autoArimaModel
+accuracy(autoArimaModel)
+Box.test(autoArimaModel$residuals, lag=30, type="Ljung-Box")
+checkresiduals(autoArimaModel)
+
+print("2d------------------------------------------------")
+autoArimaModel = auto.arima(tot_bar_ts_tr[,2], d = 2)
+autoArimaModel
+accuracy(autoArimaModel)
+Box.test(autoArimaModel$residuals, lag=30, type="Ljung-Box")
+checkresiduals(autoArimaModel)
+
+print("2dl-----------------------------------------------")
+autoArimaModel = auto.arima(log(tot_bar_ts_tr[,2]), d = 2)
+autoArimaModel
+accuracy(autoArimaModel)
+Box.test(autoArimaModel$residuals, lag=30, type="Ljung-Box")
+checkresiduals(autoArimaModel)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# SARIMA (from ARIMA(5,1,5))
+# 1D (365)
+sarima.<-Arima((tot_bar_ts_tr[,2]), 
+            order=c(4,1,4),
+            seas=list(order=c(1,1,3),
+                      period=7))
+sarima.
+accuracy(sarima.)
+
+# Box-Ljung test
+# - HO residuals are independent (good model)
+# - H1 residuals are not independent
+Box.test(sarima.$residuals, lag=30, type="Ljung-Box")
+checkresiduals(sarima.)
+
+library(astsa) 
+# Sarima
+mod<-sarima(tot_bar_ts_tr[,2],4,1,4,1,1,3,7,details=TRUE)
+mod
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Forecast 
+sarima.for(tot_bar_ts_tt[,2],7,4,1,4,1,1,3,7)
+sarima.for(tot_bar_ts_tt[,2],14,4,1,4,1,1,3,7)
+sarima.for(tot_bar_ts_tt[,2],21,4,1,4,1,1,3,7)
+plot(forecast(sarima.,h=7))
+plot(forecast(sarima.,h=14))
+plot(forecast(sarima.,h=21))
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Mobility
+autoplot(tot_bar_ts[,c(2,18)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,17)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,16)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,15)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,14)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,13)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,12)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,11)], facets=TRUE)
+
+# Hospital / def 
+autoplot(tot_bar_ts[,c(2,10)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,9)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,8)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,7)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,6)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,5)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,4)], facets=TRUE)
+autoplot(tot_bar_ts[,c(2,3)], facets=TRUE)
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# External variables
+# num_casos.x (1) vs residential_percenteage_change (16)
+autoplot(tot_bar_ts_tr[,c(2,17)], facets=TRUE) 
+fit_xreg <- auto.arima(tot_bar_ts[,c(2)], 
+                       xreg=tot_bar_ts[,c(17)])
+fit_xreg
+Box.test(fit_xreg$residuals, lag=30, type="Ljung-Box")
+checkresiduals(fit_xreg)
+
+# 1D (365 - p = 7 added - weekly )
+sarima.<-Arima(tot_bar_ts_tr[,c(2)], 
+               xreg=tot_bar_ts_tr[,c(17)], 
+               order=c(4,1,4),
+               seas=list(order=c(1,1,3),
+                         period=7))
+sarima.
+accuracy(sarima.)
+# Box-Ljung test
+# HO residuals are independent (good model)
+# H1 residuals are not independent
+Box.test(sarima.$residuals, lag=30, type="Ljung-Box")
+checkresiduals(sarima.)
+# Sarima
+mod<-sarima(tot_bar_ts_tr[,c(2)],
+            xreg=tot_bar_ts_tr[,c(17)],4,1,4,1,1,3,7,details=TRUE)
+mod
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+sarima.for(tot_bar_ts_tt[,2],7,4,1,4,1,1,3,7)
+sarima.for(tot_bar_ts_tt[,2],14,4,1,4,1,1,3,7)
+sarima.for(tot_bar_ts_tt[,2],21,4,1,4,1,1,3,7)
+plot(forecast(sarima., xreg=rep(mean(tot_bar_ts_tt[,c(17)]),7),h=7))
+plot(forecast(sarima., xreg=rep(mean(tot_bar_ts_tt[,c(17)]),14),h=14))
+plot(forecast(sarima., xreg=rep(mean(tot_bar_ts_tt[,c(17)]),21),h=21))
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+mod_tslm <- tslm(tot_bar_ts[,2] ~
+       tot_bar_ts[,18]+
+       tot_bar_ts[,17]+
+       tot_bar_ts[,16]+
+       tot_bar_ts[,15]+
+       tot_bar_ts[,14]+
+       tot_bar_ts[,13]+
+       tot_bar_ts[,12])
+
+mod_tslm %>% summary()
+# We have serial autocorrealtion (tslm model not valid)
+# Residuals are no independet
+checkresiduals(mod_tslm)
+```
+
